@@ -200,7 +200,7 @@
 
       // Redirect if not authenticated
       if (!isAuthenticated) {
-        window.location.replace('/WebDapp/auth.html');
+        window.location.replace('/landing/auth.html');
         return null;
       }
 
@@ -222,8 +222,8 @@
           body: JSON.stringify({
             plan: 'pro', // $0.50 one-time payment
             email: userEmail,
-            success_url: `${window.location.origin}/WebDapp/payment-success.html?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${window.location.origin}/WebDapp/app.html`
+            success_url: `${window.location.origin}/landing/payment-success.html?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${window.location.origin}/landing/app.html`
           })
         });
 
@@ -380,12 +380,12 @@
         }
 
         // Redirect to reference request page (you'll need to create this)
-        window.location.href = '/WebDapp/request-reference.html';
+        window.location.href = '/landing/request-reference.html';
       },
 
       viewReference(id) {
         // Redirect to reference management page
-        window.location.href = `/WebDapp/reference-management-page.html?id=${id}`;
+        window.location.href = `/landing/reference-management-page.html?id=${id}`;
       },
 
       verifyOnChain(id) {
@@ -410,7 +410,7 @@
           }
 
           // Redirect to home
-          window.location.replace('/WebDapp/auth.html');
+          window.location.replace('/landing/auth.html');
         }
       },
 
