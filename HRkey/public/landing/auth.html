@@ -1,295 +1,368 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- MARKER_AUTH: HRKEY_PUBLIC_LANDING_AUTH_V2_FIXED -->
+<!-- MARKER_AUTH: HRKEY_PUBLIC_LANDING_AUTH_V3_FIGMA_MVP -->
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HRKey - Sign Up / Login</title>
+  <title>HRKey - Create Account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
   <script>
-    // Supabase (frontend-safe): URL + ANON key (public)
     window.__SUPABASE_URL__ = "https://wrervcydgdrlcndtjboy.supabase.co";
     window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyZXJ2Y3lkZ2RybGNuZHRqYm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NzYxNTYsImV4cCI6MjA3MzU1MjE1Nn0.63M53sZW4LEYMOaxScvtLhQr_6VUj7rOaaGtlR745IM";
   </script>
 
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --teal-primary: #14b8a6;
+      --teal-hover: #0f9888;
+      --text-main: #111827;
+      --text-muted: #4b5563;
+      --text-soft: #6b7280;
+      --border: #d1d5db;
+      --bg: #ffffff;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
 
     body {
       font-family: 'Rubik', Arial, sans-serif;
-      background: linear-gradient(135deg, #000000 0%, #00C4C7 100%);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
+      background: var(--bg);
+      color: var(--text-main);
     }
 
-    .container {
-      max-width: 500px;
+    .page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+      background: #ffffff;
+    }
+
+    .auth-shell {
       width: 100%;
-      background: white;
-      border-radius: 20px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      overflow: hidden;
+      max-width: 448px;
     }
 
     .header {
-      background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
-      padding: 40px;
       text-align: center;
-    }
-
-    .logo {
-      font-size: 48px;
-      margin-bottom: 15px;
+      margin-bottom: 32px;
     }
 
     .header h1 {
-      color: #00C4C7;
-      font-size: 28px;
-      margin-bottom: 10px;
+      font-size: 48px;
+      line-height: 1.1;
+      font-weight: 500;
+      color: #111827;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
     }
 
     .header p {
-      color: #888;
-      font-size: 14px;
-    }
-
-    .content {
-      padding: 40px;
+      font-size: 18px;
+      line-height: 1.5;
+      color: var(--text-muted);
     }
 
     .referee-banner {
-      background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
-      border-left: 4px solid #00C4C7;
-      padding: 20px;
-      border-radius: 10px;
-      margin-bottom: 30px;
       display: none;
+      margin-bottom: 24px;
+      padding: 14px 16px;
+      border: 1px solid #99f6e4;
+      background: #f0fdfa;
+      color: #115e59;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
     }
 
     .referee-banner.active {
       display: block;
-      animation: slideIn 0.5s ease;
     }
 
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(-20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .referee-banner h3 {
-      color: #00C4C7;
-      font-size: 18px;
-      margin-bottom: 10px;
-    }
-
-    .referee-banner p {
-      color: #1e293b;
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    label {
-      display: block;
-      font-weight: 600;
-      color: #334155;
-      margin-bottom: 8px;
-      font-size: 14px;
-    }
-
-    input {
+    .google-btn,
+    .submit-btn,
+    .field input {
       width: 100%;
-      padding: 14px;
-      border: 2px solid #e2e8f0;
-      border-radius: 10px;
-      font-size: 14px;
-      font-family: 'Rubik', Arial, sans-serif;
-      transition: border-color .3s;
-    }
-
-    input:focus {
-      outline: none;
-      border-color: #00C4C7;
-    }
-
-    .btn-primary {
-      width: 100%;
-      padding: 16px;
-      background: linear-gradient(135deg, #00C4C7 0%, #00d2cc 100%);
-      color: #000;
-      border: none;
+      height: 64px;
       border-radius: 12px;
+      font-family: inherit;
       font-size: 16px;
-      font-weight: 600;
+    }
+
+    .google-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: #111827;
       cursor: pointer;
-      transition: .3s;
-      box-shadow: 0 4px 15px rgba(0, 196, 199, .4);
+      font-weight: 500;
+      transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+      margin-bottom: 28px;
     }
 
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(0, 196, 199, .6);
-    }
-
-    .btn-google {
-      width: 100%;
-      padding: 16px;
-      background: #fff;
-      color: #000;
-      border: 2px solid #e2e8f0;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: .3s;
-      margin-top: 15px;
-      box-shadow: 0 2px 8px rgba(0,0,0,.1);
-    }
-
-    .btn-google:hover {
-      background: #f8f9fa;
-      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    .google-btn:hover {
+      background: #f9fafb;
+      border-color: #c7cdd4;
       transform: translateY(-1px);
     }
 
-    .btn-wallet {
-      width: 100%;
-      padding: 16px;
-      background: transparent;
-      color: #00C4C7;
-      border: 2px solid #00C4C7;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: .3s;
-      margin-top: 15px;
-    }
-
-    .btn-wallet:hover {
-      background: #00C4C7;
-      color: #000;
+    .google-btn:disabled,
+    .submit-btn:disabled {
+      opacity: 0.7;
+      cursor: wait;
+      transform: none;
     }
 
     .divider {
-      text-align: center;
-      margin: 25px 0;
-      color: #94a3b8;
-      font-size: 14px;
       position: relative;
+      text-align: center;
+      margin-bottom: 28px;
+      color: var(--text-soft);
+      font-size: 16px;
+      line-height: 1;
     }
 
     .divider::before,
     .divider::after {
-      content: '';
+      content: "";
       position: absolute;
       top: 50%;
-      width: 40%;
+      width: calc(50% - 34px);
       height: 1px;
-      background: #e2e8f0;
+      background: var(--border);
     }
 
-    .divider::before { left: 0; }
-    .divider::after { right: 0; }
-
-    .benefits {
-      margin-top: 30px;
-      padding-top: 25px;
-      border-top: 1px solid #e2e8f0;
+    .divider::before {
+      left: 0;
     }
 
-    .benefit-item {
+    .divider::after {
+      right: 0;
+    }
+
+    .divider span {
+      display: inline-block;
+      padding: 0 10px;
+      background: #ffffff;
+      position: relative;
+      z-index: 1;
+    }
+
+    .form {
       display: flex;
-      align-items: center;
-      margin-bottom: 15px;
-      font-size: 14px;
-      color: #64748b;
+      flex-direction: column;
+      gap: 24px;
     }
 
-    .benefit-icon {
-      font-size: 20px;
-      margin-right: 12px;
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    .footer-note {
+    .field label {
+      font-size: 16px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .field input {
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: #111827;
+      padding: 0 16px;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .field input::placeholder {
+      color: #6b7280;
+    }
+
+    .field input:focus {
+      border-color: var(--teal-primary);
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
+    }
+
+    .submit-wrap {
+      margin-top: 12px;
+    }
+
+    .submit-btn {
+      border: none;
+      background: var(--teal-primary);
+      color: #ffffff;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+
+    .submit-btn:hover {
+      background: var(--teal-hover);
+      transform: translateY(-1px);
+    }
+
+    .footer {
+      margin-top: 28px;
       text-align: center;
-      margin-top: 25px;
-      font-size: 12px;
-      color: #94a3b8;
+      font-size: 18px;
+      line-height: 1.5;
+      color: var(--text-muted);
     }
 
-    .tiny-note {
-      margin-top: 10px;
-      font-size: 12px;
-      color: #64748b;
-      line-height: 1.4;
+    .footer a {
+      color: var(--teal-primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer a:hover {
+      color: var(--teal-hover);
+      text-decoration: underline;
+    }
+
+    .message {
+      display: none;
+      margin-bottom: 20px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .message.show {
+      display: block;
+    }
+
+    .message.error {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+
+    .message.success {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 24px 16px;
+      }
+
+      .auth-shell {
+        max-width: 100%;
+      }
+
+      .header h1 {
+        font-size: 40px;
+      }
+
+      .header p,
+      .footer {
+        font-size: 16px;
+      }
+
+      .google-btn,
+      .submit-btn,
+      .field input {
+        height: 58px;
+      }
     }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">🔐</div>
-      <h1>Welcome to HRKey</h1>
-      <p id="headerSubtitle">Build your verified professional profile</p>
-    </div>
+  <main class="page">
+    <section class="auth-shell">
+      <header class="header">
+        <h1>Create your account</h1>
+        <p id="headerSubtitle">Start building your professional reference profile</p>
+      </header>
 
-    <div class="content">
-      <div class="referee-banner" id="refereeBanner">
-        <h3>🎉 Thanks for providing a reference!</h3>
-        <p>You've seen how HRKey works. Now create your own profile and start building your decentralized professional reputation with blockchain-verified references.</p>
+      <div id="refereeBanner" class="referee-banner">
+        Thanks for providing a reference. Now build your own professional reference profile.
       </div>
 
-      <form id="authForm" novalidate>
-        <div class="form-group">
+      <div id="messageBox" class="message"></div>
+
+      <button type="button" class="google-btn" id="googleBtn" aria-label="Continue with Google">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </button>
+
+      <div class="divider"><span>OR</span></div>
+
+      <form id="authForm" class="form" novalidate>
+        <div class="field">
           <label for="name">Full Name</label>
-          <input type="text" id="name" placeholder="Enter your full name" required>
+          <input
+            type="text"
+            id="name"
+            name="name"
+            placeholder="Enter your full name"
+            autocomplete="name"
+            required
+          >
         </div>
 
-        <div class="form-group">
-          <label for="email">Email Address</label>
-          <input type="email" id="email" placeholder="your.email@company.com" required>
+        <div class="field">
+          <label for="email">Email</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            placeholder="Enter your email"
+            autocomplete="email"
+            required
+          >
         </div>
 
-        <button type="submit" class="btn-primary" id="submitBtn">🚀 Create Free Account</button>
+        <div class="field">
+          <label for="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="Create a password"
+            autocomplete="new-password"
+            required
+          >
+        </div>
 
-        <div class="tiny-note">
-          We’ll send a magic link to your email to sign in securely (no password required).
+        <div class="submit-wrap">
+          <button type="submit" class="submit-btn" id="submitBtn">Create account</button>
         </div>
       </form>
 
-      <div class="divider">OR</div>
-
-      <button class="btn-google" id="googleBtn">🔐 Continue with Google</button>
-
-      <button class="btn-wallet" id="metamaskBtn">🦊 Connect with MetaMask</button>
-      <button class="btn-wallet" id="coinbaseBtn">🔵 Connect with Coinbase Wallet</button>
-      <button class="btn-wallet" id="walletconnectBtn">🔗 Connect with WalletConnect</button>
-
-      <div class="benefits">
-        <div class="benefit-item"><span class="benefit-icon">✅</span><span>1 free blockchain-verified reference</span></div>
-        <div class="benefit-item"><span class="benefit-icon">⚡</span><span>Setup in less than 2 minutes</span></div>
-        <div class="benefit-item"><span class="benefit-icon">🔐</span><span>Secure & decentralized profile</span></div>
-        <div class="benefit-item"><span class="benefit-icon">🌐</span><span>Share with employers worldwide</span></div>
+      <div class="footer">
+        Already have an account? <a href="/landing/app.html">Log in</a>
       </div>
-
-      <div class="footer-note">
-        <p>By signing up, you agree to our Terms of Service</p>
-        <p style="margin-top: 5px;">Already have an account? <a href="/landing/app.html" style="color: #00C4C7; text-decoration: none;">Sign in</a></p>
-      </div>
-    </div>
-  </div>
-
-  <script type="module" src="./js/wallet-auth.js"></script>
+    </section>
+  </main>
 
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -298,15 +371,21 @@
     const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__;
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    window.supabase = supabase;
-
-    console.log("✅ supabase ready", {
-      hasSupabase: !!window.supabase,
-      url: SUPABASE_URL,
-      anonKeyLen: (SUPABASE_ANON_KEY || "").length
-    });
-
     const url = new URL(window.location.href);
+    const form = document.getElementById("authForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const googleBtn = document.getElementById("googleBtn");
+    const messageBox = document.getElementById("messageBox");
+
+    function showMessage(text, type = "error") {
+      messageBox.textContent = text;
+      messageBox.className = `message show ${type}`;
+    }
+
+    function clearMessage() {
+      messageBox.textContent = "";
+      messageBox.className = "message";
+    }
 
     const refereeInfo = localStorage.getItem("hrkey_referee_info");
     if (refereeInfo) {
@@ -314,16 +393,19 @@
         const data = JSON.parse(refereeInfo);
         if (data.hasProvidedReference) {
           document.getElementById("refereeBanner").classList.add("active");
-          document.getElementById("headerSubtitle").textContent = "Now build your own verified profile!";
+          document.getElementById("headerSubtitle").textContent = "Start building your own professional reference profile";
         }
       } catch (err) {
-        console.warn("Referee banner parse failed:", err);
+        console.warn("Referee info parse failed:", err);
       }
     }
 
     const code = url.searchParams.get("code");
     const errorDesc = url.searchParams.get("error_description");
-    if (errorDesc) console.error("Auth error:", errorDesc);
+    if (errorDesc) {
+      console.error("Auth error:", errorDesc);
+      showMessage(errorDesc, "error");
+    }
 
     if (code) {
       try {
@@ -331,169 +413,113 @@
 
         if (error) {
           console.error("exchangeCodeForSession error:", error);
+          showMessage(error.message || "Authentication failed.", "error");
         } else {
           const next = url.searchParams.get("next") || "/landing/app.html";
           const cleanUrl = `${window.location.origin}/landing/auth.html`;
           history.replaceState({}, document.title, cleanUrl);
-
-          const { data } = await supabase.auth.getSession();
-          console.log("✅ session after exchange:", data?.session);
-          console.log("✅ access_token:", data?.session?.access_token);
-
           window.location.replace(next);
         }
       } catch (e) {
         console.error("Exchange failed:", e);
-      }
-    } else {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session) {
-        console.log("Already logged in:", data.session.user?.email);
-        window.location.replace("/landing/app.html");
+        showMessage("Authentication exchange failed.", "error");
       }
     }
 
-    const form = document.getElementById("authForm");
-    const submitBtn = document.getElementById("submitBtn");
+    googleBtn.addEventListener("click", async () => {
+      clearMessage();
+      googleBtn.disabled = true;
+      const oldText = googleBtn.innerHTML;
+      googleBtn.innerHTML = "<span>Connecting to Google...</span>";
 
-    if (form && submitBtn) {
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+      try {
+        const redirectTo = `${window.location.origin}/landing/auth.html`;
+        const params = new URLSearchParams();
+        params.set("next", "/landing/app.html");
+        const finalRedirect = `${redirectTo}?${params.toString()}`;
 
-        const name = document.getElementById("name")?.value?.trim() || "";
-        const email = document.getElementById("email")?.value?.trim() || "";
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: finalRedirect }
+        });
 
-        if (!name || !email) {
-          alert("Please enter your name and email.");
+        if (error) {
+          throw error;
+        }
+      } catch (e) {
+        console.error("Google OAuth failed:", e);
+        showMessage(e?.message || "Failed to connect with Google.", "error");
+        googleBtn.disabled = false;
+        googleBtn.innerHTML = oldText;
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearMessage();
+
+      const name = document.getElementById("name")?.value?.trim() || "";
+      const email = document.getElementById("email")?.value?.trim() || "";
+      const password = document.getElementById("password")?.value || "";
+
+      if (!name || !email || !password) {
+        showMessage("Please complete all fields.", "error");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      const oldText = submitBtn.textContent;
+      submitBtn.textContent = "Creating account...";
+
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/landing/auth.html?next=/landing/app.html`,
+            data: {
+              full_name: name
+            }
+          }
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        localStorage.setItem("hrkey_user_data", JSON.stringify({
+          name,
+          email,
+          authenticated: !!data?.session,
+          loginDate: new Date().toISOString(),
+          source: refereeInfo ? "referee_conversion" : "direct_signup"
+        }));
+
+        localStorage.setItem("hrkey_user_plan", JSON.stringify({
+          plan: "free",
+          features: {
+            maxReferences: 1,
+            canUseBlockchain: false,
+            canExportPDF: false
+          },
+          usage: {
+            referencesUsed: 0
+          }
+        }));
+
+        if (data?.session) {
+          window.location.replace("/landing/app.html");
           return;
         }
 
-        submitBtn.disabled = true;
-        const old = submitBtn.textContent;
-        submitBtn.textContent = "⏳ Sending magic link...";
-
-        const userData = {
-          name,
-          email,
-          wallet: "0x" + Math.random().toString(16).slice(2).padEnd(40, "0"),
-          authenticated: false,
-          loginDate: new Date().toISOString(),
-          source: refereeInfo ? "referee_conversion" : "direct_signup"
-        };
-
-        localStorage.setItem("hrkey_user_data", JSON.stringify(userData));
-        localStorage.setItem("hrkey_user_plan", JSON.stringify({
-          plan: "free",
-          features: { maxReferences: 1, canUseBlockchain: false, canExportPDF: false },
-          usage: { referencesUsed: 0 }
-        }));
-
-        try {
-          const redirectTo = `${window.location.origin}/landing/auth.html?next=/landing/app.html`;
-
-          const { error } = await supabase.auth.signInWithOtp({
-            email,
-            options: { emailRedirectTo: redirectTo }
-          });
-
-          if (error) throw error;
-
-          alert("✅ Check your email for the magic link to finish signing in.");
-          submitBtn.textContent = old;
-        } catch (err) {
-          console.error("Magic link error:", err);
-          alert("Error sending magic link: " + (err?.message || "Unknown error"));
-          submitBtn.textContent = old;
-        } finally {
-          submitBtn.disabled = false;
-        }
-      });
-    }
-
-    const googleBtn = document.getElementById("googleBtn");
-    if (googleBtn) {
-      googleBtn.addEventListener("click", async () => {
-        googleBtn.disabled = true;
-        googleBtn.textContent = "⏳ Connecting to Google...";
-
-        try {
-          const redirectTo = `${window.location.origin}/landing/auth.html`;
-          const params = new URLSearchParams();
-          params.set("next", "/landing/app.html");
-          const finalRedirect = params.toString() ? `${redirectTo}?${params.toString()}` : redirectTo;
-
-          const { error } = await supabase.auth.signInWithOAuth({
-            provider: "google",
-            options: { redirectTo: finalRedirect }
-          });
-
-          if (error) {
-            console.error("Google OAuth error:", error);
-            alert("Error connecting with Google: " + error.message);
-            googleBtn.textContent = "🔐 Continue with Google";
-            googleBtn.disabled = false;
-          }
-        } catch (e) {
-          console.error("Google OAuth failed:", e);
-          alert("Failed to connect with Google");
-          googleBtn.textContent = "🔐 Continue with Google";
-          googleBtn.disabled = false;
-        }
-      });
-    }
-
-    import("./js/wallet-connector.js").then((module) => {
-      const { connectMetaMask, connectCoinbaseWallet, connectWalletConnect } = module;
-
-      const metamaskBtn = document.getElementById("metamaskBtn");
-      if (metamaskBtn) {
-        metamaskBtn.addEventListener("click", async () => {
-          metamaskBtn.disabled = true;
-          metamaskBtn.textContent = "⏳ Connecting to MetaMask...";
-          try {
-            await connectMetaMask(refereeInfo);
-          } catch (err) {
-            console.error("MetaMask connection error:", err);
-            alert("Failed to connect with MetaMask: " + (err?.message || "Unknown error"));
-            metamaskBtn.disabled = false;
-            metamaskBtn.textContent = "🦊 Connect with MetaMask";
-          }
-        });
+        showMessage("Account created. Check your email to verify your account.", "success");
+      } catch (err) {
+        console.error("Sign up error:", err);
+        showMessage(err?.message || "Could not create the account.", "error");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = oldText;
       }
-
-      const coinbaseBtn = document.getElementById("coinbaseBtn");
-      if (coinbaseBtn) {
-        coinbaseBtn.addEventListener("click", async () => {
-          coinbaseBtn.disabled = true;
-          coinbaseBtn.textContent = "⏳ Connecting to Coinbase Wallet...";
-          try {
-            await connectCoinbaseWallet(refereeInfo);
-          } catch (err) {
-            console.error("Coinbase Wallet connection error:", err);
-            alert("Failed to connect with Coinbase Wallet: " + (err?.message || "Unknown error"));
-            coinbaseBtn.disabled = false;
-            coinbaseBtn.textContent = "🔵 Connect with Coinbase Wallet";
-          }
-        });
-      }
-
-      const walletconnectBtn = document.getElementById("walletconnectBtn");
-      if (walletconnectBtn) {
-        walletconnectBtn.addEventListener("click", async () => {
-          walletconnectBtn.disabled = true;
-          walletconnectBtn.textContent = "⏳ Connecting to WalletConnect...";
-          try {
-            await connectWalletConnect(refereeInfo);
-          } catch (err) {
-            console.error("WalletConnect connection error:", err);
-            alert("Failed to connect with WalletConnect: " + (err?.message || "Unknown error"));
-            walletconnectBtn.disabled = false;
-            walletconnectBtn.textContent = "🔗 Connect with WalletConnect";
-          }
-        });
-      }
-    }).catch((err) => {
-      console.error("Failed to load wallet connector:", err);
     });
   </script>
 </body>
