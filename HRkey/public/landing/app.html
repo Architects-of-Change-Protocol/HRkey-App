@@ -182,7 +182,7 @@
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('current_role, company')
+          .select('title, company')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -190,7 +190,7 @@
           console.error('Profile lookup failed:', profileError);
         }
 
-        if (!profile?.current_role) {
+        if (!profile?.title) {
           window.location.replace(getOnboardingRedirectPath());
           return null;
         }
