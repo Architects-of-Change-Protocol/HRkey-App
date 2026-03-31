@@ -431,7 +431,7 @@
           showMessage(error.message || "Authentication failed.", "error");
         } else {
           const next = getNextPath();
-          const cleanUrl = `${window.location.origin}/landing/auth.html`;
+          const cleanUrl = `https://www.hrkey.xyz/landing/auth.html`;
           history.replaceState({}, document.title, cleanUrl);
           window.location.replace(next);
         }
@@ -448,7 +448,7 @@
       googleBtn.innerHTML = "<span>Connecting to Google...</span>";
 
       try {
-        const redirectTo = `${window.location.origin}/landing/auth.html`;
+        const redirectTo = `https://www.hrkey.xyz/landing/auth.html`;
         const params = new URLSearchParams();
         params.set("next", getNextPath());
         const finalRedirect = `${redirectTo}?${params.toString()}`;
@@ -491,7 +491,7 @@
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/landing/auth.html?next=/landing/app.html`,
+            emailRedirectTo: `https://www.hrkey.xyz/landing/auth.html?next=/landing/app.html`,
             data: {
               full_name: name
             }
