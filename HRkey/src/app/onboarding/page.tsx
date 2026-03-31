@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { Upload } from 'lucide-react';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -17,13 +18,113 @@ const supabase =
       })
     : null;
 
+interface CVUploadZoneProps {
+  onUpload: (file: File) => void;
+}
+
+function CVUploadZone({ onUpload }: CVUploadZoneProps) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      onUpload(file);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onUpload(file);
+    }
+  };
+
+  return (
+    <div
+      className={`rounded-xl border-2 border-dashed p-10 text-center transition-colors ${
+        isDragging
+          ? 'border-blue-500 bg-blue-50'
+          : 'border-neutral-300 hover:border-neutral-400'
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <input
+        type="file"
+        id="cv-upload"
+        className="hidden"
+        accept=".pdf,.doc,.docx"
+        onChange={handleFileSelect}
+      />
+      <label htmlFor="cv-upload" className="cursor-pointer">
+        <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100">
+          <Upload className="h-7 w-7 text-neutral-600" />
+        </div>
+        <p className="mb-1 text-lg font-medium text-neutral-900">
+          Upload your CV to auto-fill your profile
+        </p>
+        <p className="text-sm text-neutral-500">
+          Drag & drop or{' '}
+          <span className="font-medium text-blue-600 hover:text-blue-700">
+            browse files
+          </span>
+        </p>
+        <p className="mt-2 text-xs text-neutral-400">PDF, DOC, or DOCX (max 10MB)</p>
+      </label>
+    </div>
+  );
+}
+
 export default function OnboardingPage() {
   const [title, setTitle] = useState('');
   const [company, setCompany] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [manualMode, setManualMode] = useState(false);
 
-  const canSubmit = useMemo(() => title.trim().length > 0 && !isSaving, [title, isSaving]);
+  const canSubmit = useMemo(() => {
+    const hasBasicInfo = title.trim().length > 0;
+    return hasBasicInfo && !isSaving;
+  }, [title, isSaving]);
+
+  function handleUpload(file: File) {
+    setErrorMessage('');
+
+    const allowedExtensions = ['pdf', 'doc', 'docx'];
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+
+    if (!allowedExtensions.includes(extension)) {
+      setErrorMessage('Please upload a PDF, DOC, or DOCX file.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('File must be 10MB or smaller.');
+      return;
+    }
+
+    setUploadedFile(file);
+
+    // MVP: todavía no parseamos el CV real.
+    // Dejamos una simulación mínima para que el usuario vea que se aceptó el archivo.
+    if (!manualMode) {
+      setManualMode(true);
+    }
+  }
 
   async function handleContinue() {
     setErrorMessage('');
@@ -83,6 +184,7 @@ export default function OnboardingPage() {
           title: title.trim(),
           company: company.trim() || null,
           onboardingCompleted: true,
+          uploadedCvName: uploadedFile?.name || null,
           loginDate: existingUserData?.loginDate || new Date().toISOString(),
         })
       );
@@ -102,7 +204,7 @@ export default function OnboardingPage() {
 
   return (
     <main className="min-h-screen bg-white text-black">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-6 py-8 md:px-8">
+      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-6 py-8 md:px-8">
         <div className="mb-10">
           <div className="mb-3 flex items-center justify-between text-sm text-neutral-600">
             <span>Step 2 of 2</span>
@@ -147,7 +249,7 @@ export default function OnboardingPage() {
                 htmlFor="company"
                 className="mb-2 block text-sm font-medium text-neutral-800"
               >
-                Company
+                Company (optional)
               </label>
               <input
                 id="company"
@@ -160,6 +262,38 @@ export default function OnboardingPage() {
             </div>
           </div>
         </section>
+
+        <section className="mb-10">
+          <h2 className="mb-6 text-2xl font-semibold">Experience</h2>
+
+          <CVUploadZone onUpload={handleUpload} />
+
+          {uploadedFile ? (
+            <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              CV selected: <strong>{uploadedFile.name}</strong>
+            </div>
+          ) : null}
+
+          <div className="my-8 flex items-center gap-4">
+            <div className="h-px flex-1 bg-neutral-200" />
+            <span className="text-sm text-neutral-500">or</span>
+            <div className="h-px flex-1 bg-neutral-200" />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setManualMode(true)}
+            className="h-14 w-full rounded-xl border border-neutral-300 bg-white text-base font-medium text-black transition hover:border-black"
+          >
+            Enter details manually
+          </button>
+        </section>
+
+        {manualMode ? (
+          <div className="mb-6 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+            Manual entry mode is active. CV parsing can be connected next.
+          </div>
+        ) : null}
 
         {errorMessage ? (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
