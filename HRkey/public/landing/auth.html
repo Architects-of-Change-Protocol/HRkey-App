@@ -371,7 +371,6 @@
     const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__;
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
-        flowType: "pkce",
         detectSessionInUrl: true,
         persistSession: true,
         autoRefreshToken: true
