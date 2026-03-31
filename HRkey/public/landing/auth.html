@@ -372,6 +372,14 @@
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const url = new URL(window.location.href);
+
+    function getNextPath() {
+      const next = url.searchParams.get("next");
+      if (!next || !next.startsWith("/landing/")) {
+        return "/landing/app.html";
+      }
+      return next;
+    }
     const form = document.getElementById("authForm");
     const submitBtn = document.getElementById("submitBtn");
     const googleBtn = document.getElementById("googleBtn");
