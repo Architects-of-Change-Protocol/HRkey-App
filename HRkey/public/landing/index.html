@@ -24,6 +24,7 @@
   <link href="css/animate.css" rel="stylesheet"/>
   <link href="css/style.css" rel="stylesheet"/>
   <link href="css/responsive.css" rel="stylesheet"/>
+  
 
   <!-- Estilos personalizados -->
   <link href="css/custom-hrkey.css" rel="stylesheet"/>
@@ -31,6 +32,19 @@
   <style>
     /* Ajuste del header para dar más espacio al logo (desktop / general) */
     .header-wrapper { padding-top: 24px !important; }
+    .process-step {
+  padding: 24px;
+  transition: transform 0.2s ease;
+}
+
+.process-step:hover {
+  transform: translateY(-4px);
+}
+
+.step-icon {
+  font-size: 52px;
+  margin-bottom: 18px;
+}
     .header-bar { padding-top: 12px; padding-bottom: 12px; }
 
     /* Utilitarios para el comparativo del pricing */
@@ -397,26 +411,70 @@
 </section>
 
     <!-- VIDEO / HOW IT WORKS -->
-    <section id="content-9" class="content-9 bg-black pt-100 content-section division" style="background-color:#000;">
-      <div class="container text-center">
-        <h2 class="h2-xs text-white mb-4">See HRKey in Action</h2>
-        <p class="p-lg text-light mb-5">Experience how verifiable professional references come to life on-chain</p>
+    <section id="how-it-works" class="wide-60 division">
+  <div class="container text-center">
 
-        <div class="video-container" style="position:relative; display:inline-block; max-width:900px; width:100%;">
-          <img id="video-cover" src="images/Video-Cover.png" alt="HRKey Demo Preview" style="width:100%; border-radius:12px; cursor:pointer;">
-          <video id="hrkey-video" style="width:100%; border-radius:12px; display:none;" controls>
-            <source src="images/HRkey Video.mp4" type="video/mp4">
-            Your browser does not support the video tag.
-          </video>
-          <div id="play-button" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); cursor:pointer;">
-            <div class="pulse-btn">
-              <span class="flaticon-play-button" style="font-size:60px; color:#00C4C7;"></span>
-            </div>
-          </div>
+    <h2 class="h2-md">How HRKey works</h2>
+    <p class="p-xl mb-50">
+      Build your references once and reuse them whenever opportunity appears.
+    </p>
+
+    <div class="row">
+
+      <div class="col-md-3">
+        <div class="process-step">
+          <div class="step-icon">👤</div>
+          <h5>Request references</h5>
+          <p>Ask managers, peers, or clients once.</p>
         </div>
       </div>
-    </section>
 
+      <div class="col-md-3">
+        <div class="process-step">
+          <div class="step-icon">📩</div>
+          <h5>Receive feedback</h5>
+          <p>Collect structured, verified responses.</p>
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <div class="process-step">
+          <div class="step-icon">🔗</div>
+          <h5>Share your link</h5>
+          <p>Your references ready to use anytime.</p>
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <div class="process-step">
+          <div class="step-icon">🏢</div>
+          <h5>Companies review</h5>
+          <p>Faster decisions with real proof.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+    <h2 class="h2-md" style="color:white;">
+      Start building your references today
+    </h2>
+
+    <p class="p-xl" style="color:#cbd5f5; max-width:680px; margin:0 auto 30px;">
+      Ask once, reuse forever, and be ready when opportunity shows up.
+    </p>
+
+    <a href="auth.html" class="btn-hrkey" style="font-size:18px; padding:14px 36px;">
+      Request your first reference
+    </a>
+
+    <p style="margin-top:14px; color:#94a3b8; font-size:14px;">
+      Free to start. No commitment required.
+    </p>
+
+  </div>
+</section>
     <!-- FOOTER -->
     <footer class="hrkey-footer">
       <div class="footer-inner container">
