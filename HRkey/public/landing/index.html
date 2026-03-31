@@ -94,6 +94,24 @@
       background-clip: text;
       -webkit-text-fill-color: transparent;
     }
+    .features-clean .feature-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100px;
+  margin-bottom: 10px;
+}
+
+.features-clean .feature-icon img {
+  height: 72px;
+  width: auto;
+  filter: drop-shadow(0 6px 12px rgba(0, 210, 204, 0.25));
+  transition: transform 0.2s ease;
+}
+
+.features-clean:hover .feature-icon img {
+  transform: scale(1.08);
+}
   </style>
 
   <!-- Parche mobile: logo+hamburguesa y panel slide-down -->
