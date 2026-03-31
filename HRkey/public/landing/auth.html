@@ -391,6 +391,13 @@
     const googleBtn = document.getElementById("googleBtn");
     const messageBox = document.getElementById("messageBox");
 
+    supabase.auth.onAuthStateChange((event, session) => {
+      console.log("AUTH STATE CHANGE:", event, !!session);
+      if (event === "SIGNED_IN" && session?.user) {
+        window.location.replace(getNextPath());
+      }
+    });
+
     function showMessage(text, type = "error") {
       messageBox.textContent = text;
       messageBox.className = `message show ${type}`;
