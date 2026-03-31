@@ -302,7 +302,7 @@
         Thanks for providing a reference. Now build your own professional reference profile.
       </div>
 
-      <div id="messageBox" class="message"></div>
+      <div id="messageBox" class="message" role="status" aria-live="polite"></div>
 
       <button type="button" class="google-btn" id="googleBtn" aria-label="Continue with Google">
         <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -359,7 +359,7 @@
       </form>
 
       <div class="footer">
-        Already have an account? <a href="/landing/app.html">Log in</a>
+        Already have an account? <a href="/landing/login.html">Log in</a>
       </div>
     </section>
   </main>
@@ -415,7 +415,7 @@
           console.error("exchangeCodeForSession error:", error);
           showMessage(error.message || "Authentication failed.", "error");
         } else {
-          const next = url.searchParams.get("next") || "/landing/app.html";
+          const next = getNextPath();
           const cleanUrl = `${window.location.origin}/landing/auth.html`;
           history.replaceState({}, document.title, cleanUrl);
           window.location.replace(next);
@@ -435,7 +435,7 @@
       try {
         const redirectTo = `${window.location.origin}/landing/auth.html`;
         const params = new URLSearchParams();
-        params.set("next", "/landing/app.html");
+        params.set("next", getNextPath());
         const finalRedirect = `${redirectTo}?${params.toString()}`;
 
         const { error } = await supabase.auth.signInWithOAuth({
