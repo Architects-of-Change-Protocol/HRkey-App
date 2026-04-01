@@ -45,16 +45,12 @@ function CVUploadZone({ onUpload }: CVUploadZoneProps) {
     setIsDragging(false);
 
     const file = e.dataTransfer.files?.[0];
-    if (file) {
-      onUpload(file);
-    }
+    if (file) onUpload(file);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      onUpload(file);
-    }
+    if (file) onUpload(file);
   };
 
   return (
@@ -170,19 +166,64 @@ export default function OnboardingPage() {
         error: userError,
       } = await supabase.auth.getUser();
 
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      console.log('ONBOARDING SESSION:', session);
+      console.log('ONBOARDING USER:', user);
+      console.log('SESSION ERROR:', sessionError);
+
       if (userError || !user) {
         window.location.href = '/landing/auth.html';
         return;
       }
 
-      const { error: upsertError } = await supabase.from('profiles').upsert({
+      if (!session?.access_token) {
+        setErrorMessage('No active Supabase session found.');
+        setIsSaving(false);
+        return;
+      }
+
+      const profilePayload = {
         id: user.id,
         title: title.trim(),
         company: company.trim() || null,
-      });
+      };
 
-      if (upsertError) {
-        throw upsertError;
+      const { data: existingProfile, error: existingProfileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (existingProfileError) {
+        throw existingProfileError;
+      }
+
+      let writeError = null;
+
+      if (existingProfile?.id) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            title: profilePayload.title,
+            company: profilePayload.company,
+          })
+          .eq('id', user.id);
+
+        writeError = error;
+      } else {
+        const { error } = await supabase
+          .from('profiles')
+          .insert(profilePayload);
+
+        writeError = error;
+      }
+
+      if (writeError) {
+        throw writeError;
       }
 
       const existingUserData = (() => {
