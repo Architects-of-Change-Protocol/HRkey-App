@@ -3,6 +3,12 @@
 import { useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { resolveApiBase } from '@/lib/apiClient';
+import {
+  buildEducationRows,
+  buildExperienceRows,
+  type ImportDecision,
+  shouldPersistStructuredImport,
+} from './importPersistence';
 
 const FALLBACK_SUPABASE_URL = 'https://wrervcydgdrlcndtjboy.supabase.co';
 const FALLBACK_SUPABASE_ANON_KEY =
@@ -144,6 +150,8 @@ export default function OnboardingPage() {
   const [manualMode, setManualMode] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [parsedCvImport, setParsedCvImport] = useState<ParsedCvImport | null>(null);
+  const [hasReviewedImport, setHasReviewedImport] = useState(false);
+  const [importDecision, setImportDecision] = useState<ImportDecision>('none');
 
   const canSubmit = useMemo(() => {
     return title.trim().length > 0 && !isSaving;
@@ -168,6 +176,8 @@ export default function OnboardingPage() {
     setUploadedFile(file);
     setManualMode(true);
     setIsParsing(true);
+    setHasReviewedImport(false);
+    setImportDecision('none');
     setParsedCvImport(null);
 
     try {
@@ -203,6 +213,7 @@ export default function OnboardingPage() {
 
       if (parsed) {
         setParsedCvImport(parsed);
+        setImportDecision('accepted');
       }
 
       if (parsed?.title) {
@@ -303,6 +314,52 @@ export default function OnboardingPage() {
         throw writeError;
       }
 
+      const { error: deleteExperiencesError } = await supabase
+        .from('profile_experiences')
+        .delete()
+        .eq('profile_id', user.id);
+
+      if (deleteExperiencesError) {
+        throw new Error(deleteExperiencesError.message || 'Failed to reset imported experiences.');
+      }
+
+      const { error: deleteEducationError } = await supabase
+        .from('profile_education')
+        .delete()
+        .eq('profile_id', user.id);
+
+      if (deleteEducationError) {
+        throw new Error(deleteEducationError.message || 'Failed to reset imported education.');
+      }
+
+      if (shouldPersistStructuredImport(parsedCvImport, importDecision)) {
+        const experienceRows = buildExperienceRows(user.id, parsedCvImport.experiences);
+
+        if (experienceRows.length > 0) {
+          const { error: insertExperiencesError } = await supabase
+            .from('profile_experiences')
+            .insert(experienceRows);
+
+          if (insertExperiencesError) {
+            throw new Error(
+              insertExperiencesError.message || 'Failed to save imported experiences.'
+            );
+          }
+        }
+
+        const educationRows = buildEducationRows(user.id, parsedCvImport.education);
+
+        if (educationRows.length > 0) {
+          const { error: insertEducationError } = await supabase
+            .from('profile_education')
+            .insert(educationRows);
+
+          if (insertEducationError) {
+            throw new Error(insertEducationError.message || 'Failed to save imported education.');
+          }
+        }
+      }
+
       const existingUserData = (() => {
         try {
           return JSON.parse(localStorage.getItem('hrkey_user_data') || '{}');
@@ -342,6 +399,65 @@ export default function OnboardingPage() {
 
   function handleSkip() {
     window.location.href = '/landing/app.html';
+  }
+
+  function removeExperience(indexToRemove: number) {
+    setParsedCvImport((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        experiences: previous.experiences.filter((_, index) => index !== indexToRemove),
+      };
+    });
+  }
+
+  function updateExperience(
+    experienceIndex: number,
+    field: 'title' | 'company',
+    value: string
+  ) {
+    setParsedCvImport((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        experiences: previous.experiences.map((experience, index) =>
+          index === experienceIndex ? { ...experience, [field]: value } : experience
+        ),
+      };
+    });
+  }
+
+  function removeEducation(indexToRemove: number) {
+    setParsedCvImport((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        education: previous.education.filter((_, index) => index !== indexToRemove),
+      };
+    });
+  }
+
+  function removeSkill(skillToRemove: string) {
+    setParsedCvImport((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        skills: previous.skills.filter((skill) => skill !== skillToRemove),
+      };
+    });
+  }
+
+  function handleUseImportedProfile() {
+    setImportDecision('accepted');
+    setManualMode(true);
+    setHasReviewedImport(true);
+  }
+
+  function handleSkipImportedDetails() {
+    setImportDecision('skipped');
+    setParsedCvImport(null);
+    setHasReviewedImport(true);
+    setManualMode(true);
   }
 
   return (
@@ -433,11 +549,10 @@ export default function OnboardingPage() {
 
           {parsedCvImport ? (
             <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-4">
-              <p className="text-sm font-semibold text-neutral-900">
-                Imported from your CV
-              </p>
+              <p className="text-sm font-semibold text-neutral-900">Review your imported profile</p>
               <p className="mt-1 text-sm text-neutral-600">
-                We imported the foundation of your profile. Review the details we detected from your CV.
+                We detected the following from your CV. You can edit or remove anything before
+                continuing.
               </p>
 
               <div className="mt-3 grid gap-2 text-sm text-neutral-700 md:grid-cols-2">
@@ -464,20 +579,135 @@ export default function OnboardingPage() {
               </div>
 
               {parsedCvImport.skills?.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {parsedCvImport.skills.slice(0, 5).map((skill) => (
-                    <span
-                      key={skill}
-                      className="rounded-full border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-700"
-                    >
-                      {skill}
-                    </span>
-                  ))}
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Skills
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {parsedCvImport.skills.map((skill) => (
+                      <button
+                        key={skill}
+                        type="button"
+                        onClick={() => removeSkill(skill)}
+                        className="inline-flex items-center gap-1 rounded-full border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-700 transition hover:border-neutral-400"
+                      >
+                        <span>{skill}</span>
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
+              {parsedCvImport.experiences?.length ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Experience
+                  </p>
+                  <div className="mt-2 space-y-3">
+                    {parsedCvImport.experiences.map((experience, index) => (
+                      <div
+                        key={`${experience.title || 'experience'}-${index}`}
+                        className="rounded-lg border border-neutral-200 bg-white p-3"
+                      >
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <input
+                            type="text"
+                            value={experience.title || ''}
+                            onChange={(event) =>
+                              updateExperience(index, 'title', event.target.value)
+                            }
+                            placeholder="Role title"
+                            className="h-10 rounded-lg border border-neutral-300 px-3 text-sm outline-none transition focus:border-black"
+                          />
+                          <input
+                            type="text"
+                            value={experience.company || ''}
+                            onChange={(event) =>
+                              updateExperience(index, 'company', event.target.value)
+                            }
+                            placeholder="Company"
+                            className="h-10 rounded-lg border border-neutral-300 px-3 text-sm outline-none transition focus:border-black"
+                          />
+                        </div>
+                        {experience.start_date || experience.end_date ? (
+                          <p className="mt-2 text-xs text-neutral-500">
+                            {experience.start_date || 'Start unknown'} —{' '}
+                            {experience.end_date ||
+                              (experience.is_current ? 'Present' : 'End unknown')}
+                          </p>
+                        ) : null}
+                        {experience.summary ? (
+                          <p className="mt-2 line-clamp-2 text-sm text-neutral-600">
+                            {experience.summary}
+                          </p>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => removeExperience(index)}
+                          className="mt-2 text-xs font-medium text-neutral-600 underline-offset-2 hover:text-black hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {parsedCvImport.education?.length ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    Education
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {parsedCvImport.education.map((educationItem, index) => (
+                      <div
+                        key={`${educationItem.institution || 'education'}-${index}`}
+                        className="rounded-lg border border-neutral-200 bg-white p-3 text-sm text-neutral-700"
+                      >
+                        <p className="font-medium text-neutral-900">
+                          {educationItem.institution || 'Institution not provided'}
+                        </p>
+                        <p className="mt-1 text-neutral-600">
+                          {[educationItem.degree, educationItem.field_of_study]
+                            .filter(Boolean)
+                            .join(' · ') || 'Degree details not provided'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => removeEducation(index)}
+                          className="mt-2 text-xs font-medium text-neutral-600 underline-offset-2 hover:text-black hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleUseImportedProfile}
+                  className="h-11 rounded-lg bg-black px-4 text-sm font-semibold text-white transition hover:opacity-90"
+                >
+                  Use imported profile
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSkipImportedDetails}
+                  className="h-11 rounded-lg border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 transition hover:border-neutral-400"
+                >
+                  Skip imported details
+                </button>
+              </div>
+
               <p className="mt-3 text-xs text-neutral-500">
-                You can continue with manual edits before saving.
+                {hasReviewedImport
+                  ? 'Your import preference has been applied. You can continue when ready.'
+                  : 'Choose how you want to continue with these imported details.'}
               </p>
             </div>
           ) : null}
