@@ -74,6 +74,7 @@ const performancePredictionController = lazyController(() => import('./controlle
 const careerTrajectoryController = lazyController(() => import('./controllers/careerTrajectory.controller.js'));
 const candidateBenchmarkController = lazyController(() => import('./controllers/candidateBenchmark.controller.js'));
 const louAgentController = lazyController(() => import('./controllers/louAgent.controller.js'));
+const cvController = lazyController(() => import('./controllers/cv.controller.js'));
 
 const loadHrkeyScoreService = lazyModule(() => import('./hrkeyScoreService.js'));
 const loadScoreSnapshots = lazyModule(() => import('./services/hrscore/scoreSnapshots.js'));
@@ -1455,6 +1456,8 @@ app.post(
   validateBody(refineReferenceSchema),
   aiRefineController.refineReference
 );
+
+app.post('/api/cv/parse', requireAuth, strictLimiter, cvController.parseCv);
 
 /* =========================
    Stripe Payments
