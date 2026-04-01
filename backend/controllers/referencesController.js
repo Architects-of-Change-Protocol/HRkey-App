@@ -13,6 +13,8 @@ import logger from '../logger.js';
 import {
   ReferenceService,
   resolveCandidateId,
+  getActiveSignerCompanyIds,
+  hasApprovedReferenceAccess,
   hashInviteToken
 } from '../services/references.service.js';
 
@@ -324,6 +326,7 @@ export async function getMyPendingInvites(req, res) {
         id,
         referee_name,
         referee_email,
+        profile_experience_id,
         status,
         expires_at,
         created_at
@@ -345,10 +348,38 @@ export async function getMyPendingInvites(req, res) {
       });
     }
 
+    const experienceIds = (invites || []).map((invite) => invite.profile_experience_id).filter(Boolean);
+    let experienceById = new Map();
+
+    if (experienceIds.length) {
+      const { data: experiences, error: experiencesError } = await getSupabaseClient()
+        .from('profile_experiences')
+        .select('id, title, company, start_date, end_date')
+        .eq('profile_id', userId)
+        .in('id', experienceIds);
+
+      if (experiencesError) {
+        logger.warn('Failed to fetch linked experience details for pending invites', {
+          requestId: req.requestId,
+          userId,
+          error: experiencesError.message
+        });
+      } else {
+        experienceById = new Map((experiences || []).map((exp) => [exp.id, exp]));
+      }
+    }
+
+    const invitesWithExperience = (invites || []).map((invite) => ({
+      ...invite,
+      profile_experience: invite.profile_experience_id
+        ? experienceById.get(invite.profile_experience_id) || null
+        : null
+    }));
+
     return res.status(200).json({
       ok: true,
-      invites: invites || [],
-      count: invites?.length || 0
+      invites: invitesWithExperience,
+      count: invitesWithExperience.length
     });
   } catch (err) {
     logger.error('Exception in getMyPendingInvites', {
@@ -376,7 +407,7 @@ export async function getMyPendingInvites(req, res) {
  */
 export async function requestReferenceInvite(req, res) {
   try {
-    const { candidate_id, candidate_wallet, referee_email, role_id, message } = req.body;
+    const { candidate_id, candidate_wallet, referee_email, role_id, message, profile_experience_id } = req.body;
     const candidateId = await resolveCandidateId({
       candidateId: candidate_id,
       candidateWallet: candidate_wallet
@@ -411,6 +442,48 @@ export async function requestReferenceInvite(req, res) {
       }
     }
 
+    const supabase = getSupabaseClient();
+    const { data: ownedExperiences, error: ownedExperiencesError } = await supabase
+      .from('profile_experiences')
+      .select('id, title, company, start_date, end_date')
+      .eq('profile_id', candidateId)
+      .order('sort_order', { ascending: true });
+
+    if (ownedExperiencesError) {
+      logger.error('Failed to fetch candidate profile experiences for reference invite', {
+        requestId: req.requestId,
+        requesterId: req.user?.id,
+        candidateId,
+        error: ownedExperiencesError.message
+      });
+      return res.status(500).json({
+        ok: false,
+        error: 'DATABASE_ERROR',
+        message: 'Unable to validate selected experience.'
+      });
+    }
+
+    const experiences = ownedExperiences || [];
+    if (experiences.length > 0 && !profile_experience_id) {
+      return res.status(400).json({
+        ok: false,
+        error: 'PROFILE_EXPERIENCE_REQUIRED',
+        message: 'Select an experience for this reference request.'
+      });
+    }
+
+    const selectedExperience = profile_experience_id
+      ? experiences.find((experience) => experience.id === profile_experience_id)
+      : null;
+
+    if (profile_experience_id && !selectedExperience) {
+      return res.status(403).json({
+        ok: false,
+        error: 'INVALID_PROFILE_EXPERIENCE',
+        message: 'Selected experience is not available for this candidate.'
+      });
+    }
+
     const result = await ReferenceService.createReferenceRequest({
       userId: candidateId,
       email: referee_email,
@@ -420,12 +493,23 @@ export async function requestReferenceInvite(req, res) {
         message: message || null,
         requested_by: req.user?.id || null
       },
+      profileExperienceId: selectedExperience?.id || null,
       expiresInDays: 7
     });
 
     return res.json({
       ok: true,
-      reference_id: result.reference_id
+      reference_id: result.reference_id,
+      profile_experience_id: result.profile_experience_id || null,
+      profile_experience: selectedExperience
+        ? {
+          id: selectedExperience.id,
+          title: selectedExperience.title,
+          company: selectedExperience.company,
+          start_date: selectedExperience.start_date,
+          end_date: selectedExperience.end_date
+        }
+        : null
     });
   } catch (e) {
     logger.error('Failed to create reference invite', {
