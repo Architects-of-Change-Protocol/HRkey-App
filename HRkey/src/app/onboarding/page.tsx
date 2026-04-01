@@ -2,10 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Upload } from 'lucide-react';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const FALLBACK_SUPABASE_URL = 'https://wrervcydgdrlcndtjboy.supabase.co';
+const FALLBACK_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyZXJ2Y3lkZ2RybGNuZHRqYm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NzYxNTYsImV4cCI6MjA3MzU1MjE1Nn0.63M53sZW4LEYMOaxScvtLhQr_6VUj7rOaaGtlR745IM';
+
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || FALLBACK_SUPABASE_URL;
+
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
 
 const supabase =
   supabaseUrl && supabaseAnonKey
@@ -69,20 +75,40 @@ function CVUploadZone({ onUpload }: CVUploadZoneProps) {
         accept=".pdf,.doc,.docx"
         onChange={handleFileSelect}
       />
+
       <label htmlFor="cv-upload" className="cursor-pointer">
         <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100">
-          <Upload className="h-7 w-7 text-neutral-600" />
+          <svg
+            className="h-7 w-7 text-neutral-600"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 16V4" />
+            <path d="M8 8l4-4 4 4" />
+            <path d="M20 16.58A5 5 0 0 1 18 7h-1.26A8 8 0 1 0 4 16.25" />
+            <path d="M8 20h8" />
+          </svg>
         </div>
+
         <p className="mb-1 text-lg font-medium text-neutral-900">
           Upload your CV to auto-fill your profile
         </p>
+
         <p className="text-sm text-neutral-500">
           Drag & drop or{' '}
           <span className="font-medium text-blue-600 hover:text-blue-700">
             browse files
           </span>
         </p>
-        <p className="mt-2 text-xs text-neutral-400">PDF, DOC, or DOCX (max 10MB)</p>
+
+        <p className="mt-2 text-xs text-neutral-400">
+          PDF, DOC, or DOCX (max 10MB)
+        </p>
       </label>
     </div>
   );
@@ -97,8 +123,7 @@ export default function OnboardingPage() {
   const [manualMode, setManualMode] = useState(false);
 
   const canSubmit = useMemo(() => {
-    const hasBasicInfo = title.trim().length > 0;
-    return hasBasicInfo && !isSaving;
+    return title.trim().length > 0 && !isSaving;
   }, [title, isSaving]);
 
   function handleUpload(file: File) {
@@ -119,8 +144,6 @@ export default function OnboardingPage() {
 
     setUploadedFile(file);
 
-    // MVP: todavía no parseamos el CV real.
-    // Dejamos una simulación mínima para que el usuario vea que se aceptó el archivo.
     if (!manualMode) {
       setManualMode(true);
     }
@@ -185,7 +208,8 @@ export default function OnboardingPage() {
           company: company.trim() || null,
           onboardingCompleted: true,
           uploadedCvName: uploadedFile?.name || null,
-          loginDate: existingUserData?.loginDate || new Date().toISOString(),
+          loginDate:
+            existingUserData?.loginDate || new Date().toISOString(),
         })
       );
 
@@ -209,6 +233,7 @@ export default function OnboardingPage() {
           <div className="mb-3 flex items-center justify-between text-sm text-neutral-600">
             <span>Step 2 of 2</span>
           </div>
+
           <div className="h-2 w-full rounded-full bg-neutral-200">
             <div className="h-2 w-2/3 rounded-full bg-black" />
           </div>
@@ -218,6 +243,7 @@ export default function OnboardingPage() {
           <h1 className="mb-3 text-4xl font-semibold tracking-tight md:text-5xl">
             Build your professional profile
           </h1>
+
           <p className="text-lg text-neutral-600">
             This helps make your references more meaningful
           </p>
@@ -234,6 +260,7 @@ export default function OnboardingPage() {
               >
                 Current role
               </label>
+
               <input
                 id="title"
                 type="text"
@@ -251,6 +278,7 @@ export default function OnboardingPage() {
               >
                 Company (optional)
               </label>
+
               <input
                 id="company"
                 type="text"
