@@ -255,6 +255,8 @@
         this.user = await checkAuth();
         if (!this.user) return;
 
+        document.body.classList.remove("preload");
+
         try {
           this.plan = JSON.parse(localStorage.getItem('hrkey_user_plan') || '{"plan":"free","features":{"maxReferences":1},"usage":{"referencesUsed":0}}');
         } catch {
