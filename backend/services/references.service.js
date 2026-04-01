@@ -244,7 +244,35 @@ export async function fetchPublicInviteByToken(token) {
   }
 
   const row = Array.isArray(data) ? data[0] : data;
-  return { data: row || null, error: null };
+  if (!row) {
+    return { data: null, error: null };
+  }
+
+  const experienceId = row.profile_experience_id || null;
+  if (!experienceId) {
+    return { data: { ...row, experience: null }, error: null };
+  }
+
+  const { data: experience, error: experienceError } = await supabase
+    .from('profile_experiences')
+    .select('title, company, start_date, end_date')
+    .eq('id', experienceId)
+    .maybeSingle();
+
+  if (experienceError) {
+    logger.warn('Failed to load experience context for invite token lookup', {
+      experienceId,
+      error: experienceError.message
+    });
+  }
+
+  return {
+    data: {
+      ...row,
+      experience: experience || null
+    },
+    error: null
+  };
 }
 
 export async function fetchSelfReferences(userId) {
@@ -558,7 +586,15 @@ export class ReferenceService {
       invite: {
         referee_name: invite.referrer_name,
         referee_email: invite.referrer_email,
-        expires_at: invite.expires_at
+        expires_at: invite.expires_at,
+        experience: invite.experience
+          ? {
+            title: invite.experience.title || null,
+            company: invite.experience.company || null,
+            start_date: invite.experience.start_date || null,
+            end_date: invite.experience.end_date || null
+          }
+          : null
       }
     };
   }

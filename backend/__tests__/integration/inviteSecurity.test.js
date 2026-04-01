@@ -63,11 +63,13 @@ function buildTableMock({
 
 const referencesTable = buildTableMock();
 const referenceInvitesTable = buildTableMock();
+const profileExperiencesTable = buildTableMock();
 
 mockSupabaseClient.rpc = jest.fn();
 mockSupabaseClient.from.mockImplementation((table) => {
   if (table === 'references') return referencesTable;
   if (table === 'reference_invites') return referenceInvitesTable;
+  if (table === 'profile_experiences') return profileExperiencesTable;
   return buildTableMock();
 });
 
@@ -160,6 +162,10 @@ describe('Invite security remediation', () => {
     referencesTable.then.mockImplementation((resolve, reject) => Promise.resolve(mockDatabaseSuccess([])).then(resolve, reject));
     referencesTable.catch.mockImplementation((reject) => Promise.resolve(mockDatabaseSuccess([])).catch(reject));
     referencesTable.finally.mockImplementation((handler) => Promise.resolve(mockDatabaseSuccess([])).finally(handler));
+
+    profileExperiencesTable.select.mockReturnThis();
+    profileExperiencesTable.eq.mockReturnThis();
+    profileExperiencesTable.maybeSingle.mockResolvedValue({ data: null, error: null });
   });
 
   afterAll(() => {
@@ -200,8 +206,41 @@ describe('Invite security remediation', () => {
       invite: {
         referee_name: 'Ref',
         referee_email: 'ref@example.com',
-        expires_at: '2099-01-01T00:00:00Z'
+        expires_at: '2099-01-01T00:00:00Z',
+        experience: null
       }
+    });
+  });
+
+  test('includes experience context when the invite is linked to a profile experience', async () => {
+    mockSupabaseClient.rpc.mockResolvedValueOnce({
+      data: [{
+        reference_id: 'invite-1',
+        referrer_email: 'ref@example.com',
+        referrer_name: 'Ref',
+        expires_at: '2099-01-01T00:00:00Z',
+        profile_experience_id: 'exp-1'
+      }],
+      error: null
+    });
+    profileExperiencesTable.maybeSingle.mockResolvedValueOnce({
+      data: {
+        title: 'Senior Program Manager',
+        company: 'Datasys',
+        start_date: '2022-01-01',
+        end_date: null
+      },
+      error: null
+    });
+
+    const res = await request(app).get('/api/reference/by-token/with-experience-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.invite.experience).toEqual({
+      title: 'Senior Program Manager',
+      company: 'Datasys',
+      start_date: '2022-01-01',
+      end_date: null
     });
   });
 
@@ -268,14 +307,14 @@ describe('Invite security remediation', () => {
       actionType: 'submit_reference_attempt',
       tokenHashPrefix: crypto.createHash('sha256').update('expired-or-used-token').digest('hex').slice(0, 12),
       clientIpHash: expect.any(String),
-      userAgent: expect.any(String),
+      userAgent: null,
       outcome: 'attempted'
     });
     expect(auditLogger.logReferenceSubmissionAudit).toHaveBeenNthCalledWith(2, {
       actionType: 'submit_reference_failure',
       tokenHashPrefix: crypto.createHash('sha256').update('expired-or-used-token').digest('hex').slice(0, 12),
       clientIpHash: expect.any(String),
-      userAgent: expect.any(String),
+      userAgent: null,
       outcome: 'failed',
       errorCode: 'invalid_or_expired_invite'
     });
@@ -307,7 +346,7 @@ describe('Invite security remediation', () => {
       actionType: 'submit_reference_failure',
       tokenHashPrefix: crypto.createHash('sha256').update('replay-token').digest('hex').slice(0, 12),
       clientIpHash: expect.any(String),
-      userAgent: expect.any(String),
+      userAgent: null,
       outcome: 'failed',
       errorCode: 'invalid_or_expired_invite'
     });
