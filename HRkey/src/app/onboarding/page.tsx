@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { resolveApiBase } from '@/lib/apiClient';
 
 const FALLBACK_SUPABASE_URL = 'https://wrervcydgdrlcndtjboy.supabase.co';
 const FALLBACK_SUPABASE_ANON_KEY =
@@ -26,9 +27,34 @@ const supabase =
 
 interface CVUploadZoneProps {
   onUpload: (file: File) => void;
+  isParsing: boolean;
 }
 
-function CVUploadZone({ onUpload }: CVUploadZoneProps) {
+interface ParsedCvImport {
+  full_name: string | null;
+  title: string | null;
+  company: string | null;
+  location: string | null;
+  skills: string[];
+  education_summary: string | null;
+  experiences: Array<{
+    title: string | null;
+    company: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    is_current: boolean;
+    summary: string | null;
+  }>;
+  education: Array<{
+    institution: string | null;
+    degree: string | null;
+    field_of_study: string | null;
+    start_date: string | null;
+    end_date: string | null;
+  }>;
+}
+
+function CVUploadZone({ onUpload, isParsing }: CVUploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -68,8 +94,9 @@ function CVUploadZone({ onUpload }: CVUploadZoneProps) {
         type="file"
         id="cv-upload"
         className="hidden"
-        accept=".pdf,.doc,.docx"
+        accept=".pdf"
         onChange={handleFileSelect}
+        disabled={isParsing}
       />
 
       <label htmlFor="cv-upload" className="cursor-pointer">
@@ -102,9 +129,7 @@ function CVUploadZone({ onUpload }: CVUploadZoneProps) {
           </span>
         </p>
 
-        <p className="mt-2 text-xs text-neutral-400">
-          PDF, DOC, or DOCX (max 10MB)
-        </p>
+        <p className="mt-2 text-xs text-neutral-400">PDF only (max 10MB)</p>
       </label>
     </div>
   );
@@ -117,19 +142,21 @@ export default function OnboardingPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [manualMode, setManualMode] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const [parsedCvImport, setParsedCvImport] = useState<ParsedCvImport | null>(null);
 
   const canSubmit = useMemo(() => {
     return title.trim().length > 0 && !isSaving;
   }, [title, isSaving]);
 
-  function handleUpload(file: File) {
+  async function handleUpload(file: File) {
     setErrorMessage('');
 
-    const allowedExtensions = ['pdf', 'doc', 'docx'];
+    const allowedExtensions = ['pdf'];
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
 
     if (!allowedExtensions.includes(extension)) {
-      setErrorMessage('Please upload a PDF, DOC, or DOCX file.');
+      setErrorMessage('Please upload a PDF file.');
       return;
     }
 
@@ -139,9 +166,59 @@ export default function OnboardingPage() {
     }
 
     setUploadedFile(file);
+    setManualMode(true);
+    setIsParsing(true);
+    setParsedCvImport(null);
 
-    if (!manualMode) {
-      setManualMode(true);
+    try {
+      if (!supabase) {
+        throw new Error('Supabase is not configured correctly.');
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const formData = new FormData();
+      formData.append('cv', file);
+
+      const response = await fetch(`${resolveApiBase()}/api/cv/parse`, {
+        method: 'POST',
+        headers: session?.access_token
+          ? {
+              Authorization: `Bearer ${session.access_token}`,
+            }
+          : undefined,
+        body: formData,
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error || 'Failed to parse CV.');
+      }
+
+      const parsed = (data?.parsed || null) as ParsedCvImport | null;
+
+      if (parsed) {
+        setParsedCvImport(parsed);
+      }
+
+      if (parsed?.title) {
+        setTitle(parsed.title);
+      }
+
+      if (parsed?.company) {
+        setCompany(parsed.company);
+      }
+    } catch (error: any) {
+      setErrorMessage(
+        error?.message ||
+          'CV parsing is unavailable right now. You can continue with manual entry.'
+      );
+    } finally {
+      setIsParsing(false);
     }
   }
 
@@ -335,11 +412,73 @@ export default function OnboardingPage() {
         <section className="mb-10">
           <h2 className="mb-6 text-2xl font-semibold">Experience</h2>
 
-          <CVUploadZone onUpload={handleUpload} />
+          <CVUploadZone onUpload={handleUpload} isParsing={isParsing} />
 
           {uploadedFile ? (
             <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              CV selected: <strong>{uploadedFile.name}</strong>
+              {isParsing ? (
+                <div>
+                  <p>
+                    Analyzing your CV: <strong>{uploadedFile.name}</strong>
+                  </p>
+                  <p className="mt-1 text-xs text-green-700/80">
+                    We’re identifying your latest role and company.
+                  </p>
+                </div>
+              ) : (
+                <>CV selected: <strong>{uploadedFile.name}</strong></>
+              )}
+            </div>
+          ) : null}
+
+          {parsedCvImport ? (
+            <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-4">
+              <p className="text-sm font-semibold text-neutral-900">
+                Imported from your CV
+              </p>
+              <p className="mt-1 text-sm text-neutral-600">
+                We imported the foundation of your profile. Review the details we detected from your CV.
+              </p>
+
+              <div className="mt-3 grid gap-2 text-sm text-neutral-700 md:grid-cols-2">
+                {parsedCvImport.full_name ? (
+                  <p>
+                    <span className="font-medium text-neutral-900">Name:</span>{' '}
+                    {parsedCvImport.full_name}
+                  </p>
+                ) : null}
+                {parsedCvImport.location ? (
+                  <p>
+                    <span className="font-medium text-neutral-900">Location:</span>{' '}
+                    {parsedCvImport.location}
+                  </p>
+                ) : null}
+                <p>
+                  <span className="font-medium text-neutral-900">Experiences:</span>{' '}
+                  {parsedCvImport.experiences?.length || 0}
+                </p>
+                <p>
+                  <span className="font-medium text-neutral-900">Education:</span>{' '}
+                  {parsedCvImport.education?.length || 0}
+                </p>
+              </div>
+
+              {parsedCvImport.skills?.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {parsedCvImport.skills.slice(0, 5).map((skill) => (
+                    <span
+                      key={skill}
+                      className="rounded-full border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-700"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              <p className="mt-3 text-xs text-neutral-500">
+                You can continue with manual edits before saving.
+              </p>
             </div>
           ) : null}
 
@@ -360,7 +499,7 @@ export default function OnboardingPage() {
 
         {manualMode ? (
           <div className="mb-6 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-            Manual entry mode is active. CV parsing can be connected next.
+            Manual entry mode is active. You can continue even if CV parsing is unavailable.
           </div>
         ) : null}
 
@@ -374,10 +513,10 @@ export default function OnboardingPage() {
           <button
             type="button"
             onClick={handleContinue}
-            disabled={!canSubmit}
+            disabled={!canSubmit || isParsing}
             className="h-14 w-full rounded-xl bg-black text-base font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSaving ? 'Saving...' : 'Continue'}
+            {isSaving ? 'Saving...' : isParsing ? 'Parsing CV...' : 'Continue'}
           </button>
 
           <button
