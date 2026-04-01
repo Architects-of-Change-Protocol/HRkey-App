@@ -265,7 +265,14 @@ export async function fetchCandidateReferences(candidateId) {
 }
 
 export class ReferenceService {
-  static async createReferenceRequest({ userId, email, name, applicantData, expiresInDays = 7 }) {
+  static async createReferenceRequest({
+    userId,
+    email,
+    name,
+    applicantData,
+    profileExperienceId = null,
+    expiresInDays = 7
+  }) {
     const inviteToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashInviteToken(inviteToken);
 
@@ -277,6 +284,7 @@ export class ReferenceService {
       status: 'pending',
       expires_at: new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString(),
       created_at: new Date().toISOString(),
+      profile_experience_id: profileExperienceId,
       metadata: applicantData || null
     };
 
@@ -299,7 +307,13 @@ export class ReferenceService {
     await this.sendRefereeInviteEmail(email, name, applicantData, verificationUrl, expiresInDays);
     await syncReferenceRequestGraph({ candidateId: userId });
 
-    return { success: true, reference_id: invite.id, token: inviteToken, verification_url: verificationUrl };
+    return {
+      success: true,
+      reference_id: invite.id,
+      profile_experience_id: invite.profile_experience_id || null,
+      token: inviteToken,
+      verification_url: verificationUrl
+    };
   }
 
   static async submitReference({

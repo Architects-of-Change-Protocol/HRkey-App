@@ -33,7 +33,7 @@ jest.unstable_mockModule('../../utils/auditLogger.js', () => ({
   AuditActionTypes: {}
 }));
 
-const { fetchSelfReferences } = await import('../../services/references.service.js');
+const { fetchSelfReferences, ReferenceService } = await import('../../services/references.service.js');
 
 describe('references.service.fetchSelfReferences', () => {
   beforeEach(() => {
@@ -63,5 +63,43 @@ describe('references.service.fetchSelfReferences', () => {
     expect(builder.select.mock.calls[0][0]).toContain('validation_status');
     expect(builder.select.mock.calls[0][0]).toContain('reference_hash');
     expect(result.data).toEqual(rows);
+  });
+});
+
+describe('references.service.createReferenceRequest', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('persists profile_experience_id on reference_invites row', async () => {
+    const insertMock = jest.fn(() => ({
+      select: jest.fn(() => ({
+        single: jest.fn(async () => ({
+          data: { id: 'invite-1', profile_experience_id: 'exp-1' },
+          error: null
+        }))
+      }))
+    }));
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'reference_invites') {
+        return { insert: insertMock };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const result = await ReferenceService.createReferenceRequest({
+      userId: 'user-1',
+      email: 'referee@example.com',
+      name: 'Referee',
+      profileExperienceId: 'exp-1',
+      applicantData: { message: 'Please provide feedback' }
+    });
+
+    expect(insertMock).toHaveBeenCalledWith([expect.objectContaining({
+      profile_experience_id: 'exp-1',
+      requester_id: 'user-1'
+    })]);
+    expect(result.profile_experience_id).toBe('exp-1');
   });
 });

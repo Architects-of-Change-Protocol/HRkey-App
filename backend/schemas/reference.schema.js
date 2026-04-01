@@ -45,6 +45,7 @@ export const createReferenceInviteSchema = z.object({
   candidate_id: z.string().uuid('Invalid candidate ID').optional(),
   candidate_wallet: z.string().min(6, 'Invalid candidate wallet').optional(),
   referee_email: z.string().email('Invalid email format').max(255),
+  profile_experience_id: z.string().uuid('Invalid profile experience ID').optional(),
   role_id: z.string().uuid('Invalid role ID').optional(),
   message: z.string().max(2000, 'Message too long').optional()
 }).refine(
