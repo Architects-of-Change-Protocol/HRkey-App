@@ -380,12 +380,19 @@
     const url = new URL(window.location.href);
 
     function getNextPath() {
-      const next = url.searchParams.get("next");
-      if (!next || !next.startsWith("/landing/")) {
-        return "/landing/app.html";
-      }
-      return next;
-    }
+  const next = url.searchParams.get("next");
+  const allowedPaths = new Set([
+    "/landing/app.html",
+    "/onboarding",
+    "/cv/builder"
+  ]);
+
+  if (!next || !allowedPaths.has(next)) {
+    return "/landing/app.html";
+  }
+
+  return next;
+}
     const form = document.getElementById("authForm");
     const submitBtn = document.getElementById("submitBtn");
     const googleBtn = document.getElementById("googleBtn");
@@ -439,7 +446,7 @@
           const next = getNextPath();
           const cleanUrl = `${window.location.origin}/landing/auth.html`;
           history.replaceState({}, document.title, cleanUrl);
-          window.location.replace(next);
+          window.location.replace(getNextPath());
         }
       } catch (e) {
         console.error("Exchange failed:", e);
