@@ -421,11 +421,11 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
       }
     };
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => dashboard.init());
-    } else {
-      dashboard.init();
-    }
+   if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => window.dashboard.init());
+} else {
+  window.dashboard.init();
+}
   </script>
 </body>
 </html>
