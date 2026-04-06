@@ -17,123 +17,447 @@
   <script src="https://js.stripe.com/v3/"></script>
 
   <style>
-    body { background-color: #0a0a0a; font-family: 'Rubik', sans-serif; }
-    .dashboard-header { background: linear-gradient(135deg, #000000 0%, #00C4C7 100%); color: white; padding: 20px 0; box-shadow: 0 4px 20px rgba(0,196,199,0.3); }
-    .header-content { display: flex; justify-content: space-between; align-items: center; }
-    .logo-section { display: flex; align-items: center; }
-    .logo-section img { width: 120px; height: auto; margin-right: 0; }
-    .user-section { display: flex; align-items: center; gap: 20px; }
-    .wallet-info { background: rgba(0,196,199,0.2); padding: 8px 16px; border-radius: 25px; font-size: 14px; border: 1px solid #00C4C7; }
-    .user-name-display { background: rgba(0,196,199,0.15); padding: 8px 16px; border-radius: 25px; font-size: 14px; margin-right: 10px; }
-    .main-content { padding: 30px 0; background: #0a0a0a; }
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 40px; }
-    .stat-card { background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%); border-radius: 15px; padding: 25px; box-shadow: 0 4px 15px rgba(0,196,199,0.1); border-left: 4px solid #00C4C7; transition: transform 0.3s ease, box-shadow 0.3s ease; }
-    .stat-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,196,199,0.3); }
-    .stat-card h3 { font-size: 14px; color: #00C4C7; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-card .number { font-size: 36px; font-weight: 700; color: #ffffff; margin-bottom: 5px; }
-    .stat-card .label { font-size: 13px; color: #888888; }
-    .action-section { background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%); border-radius: 15px; padding: 30px; box-shadow: 0 4px 15px rgba(0,196,199,0.1); margin-bottom: 30px; text-align: center; border: 1px solid rgba(0,196,199,0.2); }
-    .action-section h2 { color: #ffffff; margin-bottom: 15px; font-size: 24px; }
-    .action-section p { color: #888888; margin-bottom: 25px; font-size: 15px; }
-    .btn-primary { background: linear-gradient(135deg, #00C4C7 0%, #00d2cc 100%); border: none; padding: 14px 35px; border-radius: 25px; color: #000000; font-weight: 600; transition: all 0.3s ease; font-size: 15px; cursor: pointer; text-decoration: none; display: inline-block; box-shadow: 0 4px 15px rgba(0,196,199,0.4); }
-    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,196,199,0.6); }
-    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-    .btn-secondary { background: transparent; border: 2px solid #00C4C7; padding: 8px 16px; border-radius: 20px; color: #00C4C7; font-weight: 500; transition: all 0.3s ease; font-size: 13px; cursor: pointer; }
-    .btn-secondary:hover { background: #00C4C7; color: #000000; }
-    .references-table { background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%); border-radius: 15px; padding: 30px; box-shadow: 0 4px 15px rgba(0,196,199,0.1); border: 1px solid rgba(0,196,199,0.2); }
-    .references-table h2 { color: #ffffff; margin-bottom: 25px; font-size: 24px; }
-    table { width: 100%; border-collapse: collapse; }
-    th { background: rgba(0,196,199,0.1); color: #00C4C7; font-weight: 600; padding: 12px; text-align: left; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
-    td { padding: 15px 12px; border-bottom: 1px solid rgba(0,196,199,0.1); color: #cccccc; }
-    .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
-    .status-pending { background: rgba(251,191,36,0.2); color: #fbbf24; border: 1px solid #fbbf24; }
-    .status-completed { background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid #10b981; }
-    .status-blockchain { background: rgba(0,196,199,0.2); color: #00C4C7; border: 1px solid #00C4C7; }
-    .btn-logout { background: rgba(0,196,199,0.2); border: 1px solid #00C4C7; padding: 8px 20px; border-radius: 20px; color: #00C4C7; font-size: 14px; cursor: pointer; transition: all 0.3s ease; }
-    .btn-logout:hover { background: #00C4C7; color: #000000; }
-    .empty-state { text-align: center; padding: 60px 20px; color: #888888; }
-    .empty-state svg { width: 100px; height: 100px; margin-bottom: 20px; opacity: 0.3; }
-    .loading-spinner { border: 3px solid rgba(0,196,199,0.2); border-top: 3px solid #00C4C7; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .alert { padding: 15px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
-    .alert-success { background: rgba(16,185,129,0.1); color: #10b981; border-left: 4px solid #10b981; }
-    .alert-error { background: rgba(239,68,68,0.1); color: #ef4444; border-left: 4px solid #ef4444; }
-    .alert-info { background: rgba(0,196,199,0.1); color: #00C4C7; border-left: 4px solid #00C4C7; }
-    .upgrade-banner { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000000; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-    .plan-badge { display: inline-block; padding: 4px 12px; border-radius: 15px; font-size: 11px; font-weight: 600; margin-left: 10px; }
-    .plan-free { background: rgba(0,196,199,0.3); color: #00C4C7; border: 1px solid #00C4C7; }
-    .plan-pro { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000000; }
-    .action-buttons { display: flex; gap: 8px; }
+    body {
+      background-color: #0a0a0a;
+      font-family: 'Rubik', sans-serif;
+    }
+
+    body.booting {
+      background: #050505;
+      overflow: hidden;
+    }
+
+    body.app-ready {
+      overflow: auto;
+    }
+
+    #appShell {
+      display: none;
+    }
+
+    body.app-ready #appShell {
+      display: block;
+    }
+
+    .boot-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      background: radial-gradient(circle at top, #123, #050505 55%);
+      color: #d1d5db;
+      z-index: 9999;
+    }
+
+    body.app-ready .boot-splash {
+      display: none;
+    }
+
+    .boot-splash .loading-spinner {
+      margin: 0;
+    }
+
+    .dashboard-header {
+      background: linear-gradient(135deg, #000000 0%, #00C4C7 100%);
+      color: white;
+      padding: 20px 0;
+      box-shadow: 0 4px 20px rgba(0,196,199,0.3);
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo-section {
+      display: flex;
+      align-items: center;
+    }
+
+    .logo-section img {
+      width: 120px;
+      height: auto;
+      margin-right: 0;
+    }
+
+    .user-section {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .wallet-info {
+      background: rgba(0,196,199,0.2);
+      padding: 8px 16px;
+      border-radius: 25px;
+      font-size: 14px;
+      border: 1px solid #00C4C7;
+    }
+
+    .user-name-display {
+      background: rgba(0,196,199,0.15);
+      padding: 8px 16px;
+      border-radius: 25px;
+      font-size: 14px;
+      margin-right: 10px;
+    }
+
+    .main-content {
+      padding: 30px 0;
+      background: #0a0a0a;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+      border-radius: 15px;
+      padding: 25px;
+      box-shadow: 0 4px 15px rgba(0,196,199,0.1);
+      border-left: 4px solid #00C4C7;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 25px rgba(0,196,199,0.3);
+    }
+
+    .stat-card h3 {
+      font-size: 14px;
+      color: #00C4C7;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-card .number {
+      font-size: 36px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 5px;
+    }
+
+    .stat-card .label {
+      font-size: 13px;
+      color: #888888;
+    }
+
+    .action-section {
+      background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+      border-radius: 15px;
+      padding: 30px;
+      box-shadow: 0 4px 15px rgba(0,196,199,0.1);
+      margin-bottom: 30px;
+      text-align: center;
+      border: 1px solid rgba(0,196,199,0.2);
+    }
+
+    .action-section h2 {
+      color: #ffffff;
+      margin-bottom: 15px;
+      font-size: 24px;
+    }
+
+    .action-section p {
+      color: #888888;
+      margin-bottom: 25px;
+      font-size: 15px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00C4C7 0%, #00d2cc 100%);
+      border: none;
+      padding: 14px 35px;
+      border-radius: 25px;
+      color: #000000;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      font-size: 15px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 15px rgba(0,196,199,0.4);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0,196,199,0.6);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 2px solid #00C4C7;
+      padding: 8px 16px;
+      border-radius: 20px;
+      color: #00C4C7;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover {
+      background: #00C4C7;
+      color: #000000;
+    }
+
+    .references-table {
+      background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+      border-radius: 15px;
+      padding: 30px;
+      box-shadow: 0 4px 15px rgba(0,196,199,0.1);
+      border: 1px solid rgba(0,196,199,0.2);
+    }
+
+    .references-table h2 {
+      color: #ffffff;
+      margin-bottom: 25px;
+      font-size: 24px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      background: rgba(0,196,199,0.1);
+      color: #00C4C7;
+      font-weight: 600;
+      padding: 12px;
+      text-align: left;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 15px 12px;
+      border-bottom: 1px solid rgba(0,196,199,0.1);
+      color: #cccccc;
+    }
+
+    .status-badge {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-pending {
+      background: rgba(251,191,36,0.2);
+      color: #fbbf24;
+      border: 1px solid #fbbf24;
+    }
+
+    .status-completed {
+      background: rgba(16,185,129,0.2);
+      color: #10b981;
+      border: 1px solid #10b981;
+    }
+
+    .status-blockchain {
+      background: rgba(0,196,199,0.2);
+      color: #00C4C7;
+      border: 1px solid #00C4C7;
+    }
+
+    .btn-logout {
+      background: rgba(0,196,199,0.2);
+      border: 1px solid #00C4C7;
+      padding: 8px 20px;
+      border-radius: 20px;
+      color: #00C4C7;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-logout:hover {
+      background: #00C4C7;
+      color: #000000;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #888888;
+    }
+
+    .empty-state svg {
+      width: 100px;
+      height: 100px;
+      margin-bottom: 20px;
+      opacity: 0.3;
+    }
+
+    .loading-spinner {
+      border: 3px solid rgba(0,196,199,0.2);
+      border-top: 3px solid #00C4C7;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .alert {
+      padding: 15px 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .alert-success {
+      background: rgba(16,185,129,0.1);
+      color: #10b981;
+      border-left: 4px solid #10b981;
+    }
+
+    .alert-error {
+      background: rgba(239,68,68,0.1);
+      color: #ef4444;
+      border-left: 4px solid #ef4444;
+    }
+
+    .alert-info {
+      background: rgba(0,196,199,0.1);
+      color: #00C4C7;
+      border-left: 4px solid #00C4C7;
+    }
+
+    .upgrade-banner {
+      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+      color: #000000;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .plan-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 15px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+
+    .plan-free {
+      background: rgba(0,196,199,0.3);
+      color: #00C4C7;
+      border: 1px solid #00C4C7;
+    }
+
+    .plan-pro {
+      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+      color: #000000;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+    }
   </style>
-<style>
-body.preload .main-content, body.preload .dashboard-header { visibility: hidden; }
-</style>
 </head>
-<body class="preload">
-  <header class="dashboard-header">
-    <div class="container">
-      <div class="header-content">
-        <div class="logo-section">
-          <a href="index.html">
-            <img src="images/LogoHRKEY-transparente.png" alt="HRKey Logo">
-          </a>
-        </div>
-        <div class="user-section">
-          <span class="user-name-display" id="userName">Loading...</span>
-          <span class="wallet-info" id="walletDisplay">Not connected</span>
-          <button class="btn-logout" onclick="dashboard.logout()">Logout</button>
+<body class="booting">
+  <div class="boot-splash" id="bootSplash" role="status" aria-live="polite">
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <p>Loading your workspace...</p>
+  </div>
+
+  <div id="appShell" aria-hidden="true">
+    <header class="dashboard-header">
+      <div class="container">
+        <div class="header-content">
+          <div class="logo-section">
+            <a href="index.html">
+              <img src="images/LogoHRKEY-transparente.png" alt="HRKey Logo">
+            </a>
+          </div>
+          <div class="user-section">
+            <span class="user-name-display" id="userName">Loading...</span>
+            <span class="wallet-info" id="walletDisplay">Not connected</span>
+            <button class="btn-logout" onclick="window.dashboard.logout()">Logout</button>
+          </div>
         </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <div class="main-content">
-    <div class="container">
-      <div id="upgradeBanner" class="upgrade-banner" style="display: none;">
-        <div>
-          <strong>🎯 Upgrade to PRO</strong>
-          <p style="margin: 5px 0 0 0; font-size: 13px;">You've used your 1 FREE reference. Upgrade to PRO for unlimited references and blockchain verification!</p>
+    <div class="main-content">
+      <div class="container">
+        <div id="upgradeBanner" class="upgrade-banner" style="display: none;">
+          <div>
+            <strong>🎯 Upgrade to PRO</strong>
+            <p style="margin: 5px 0 0 0; font-size: 13px;">You've used your 1 FREE reference. Upgrade to PRO for unlimited references and blockchain verification!</p>
+          </div>
+          <button class="btn-primary" style="background: #000000; color: #fbbf24; border: 2px solid #fbbf24;" onclick="window.dashboard.upgradeToPro()">Upgrade Now</button>
         </div>
-        <button class="btn-primary" style="background: #000000; color: #fbbf24; border: 2px solid #fbbf24;" onclick="dashboard.upgradeToPro()">Upgrade Now</button>
-      </div>
 
-      <div class="stats-grid">
-        <div class="stat-card">
-          <h3>Total References</h3>
-          <div class="number" id="statTotal">0</div>
-          <div class="label">All time</div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Total References</h3>
+            <div class="number" id="statTotal">0</div>
+            <div class="label">All time</div>
+          </div>
+          <div class="stat-card">
+            <h3>Pending</h3>
+            <div class="number" id="statPending">0</div>
+            <div class="label">Awaiting response</div>
+          </div>
+          <div class="stat-card">
+            <h3>Completed</h3>
+            <div class="number" id="statCompleted">0</div>
+            <div class="label">Ready to use</div>
+          </div>
+          <div class="stat-card">
+            <h3>On Blockchain</h3>
+            <div class="number" id="statBlockchain">0</div>
+            <div class="label">Verified</div>
+          </div>
         </div>
-        <div class="stat-card">
-          <h3>Pending</h3>
-          <div class="number" id="statPending">0</div>
-          <div class="label">Awaiting response</div>
-        </div>
-        <div class="stat-card">
-          <h3>Completed</h3>
-          <div class="number" id="statCompleted">0</div>
-          <div class="label">Ready to use</div>
-        </div>
-        <div class="stat-card">
-          <h3>On Blockchain</h3>
-          <div class="number" id="statBlockchain">0</div>
-          <div class="label">Verified</div>
-        </div>
-      </div>
 
-      <div id="alertContainer"></div>
+        <div id="alertContainer"></div>
 
-      <div class="action-section">
-        <h2>📝 Ready to grow your professional profile?</h2>
-        <p>Request a new reference from a colleague, manager, or client</p>
-        <button class="btn-primary" onclick="dashboard.createNewReference()" id="requestBtn">
-          🚀 Request New Reference
-        </button>
-      </div>
+        <div class="action-section">
+          <h2>📝 Ready to grow your professional profile?</h2>
+          <p>Request a new reference from a colleague, manager, or client</p>
+          <button class="btn-primary" onclick="window.dashboard.createNewReference()" id="requestBtn">
+            🚀 Request New Reference
+          </button>
+        </div>
 
-      <div class="references-table">
-        <h2>📋 My References</h2>
-        <div id="tableContainer">
-          <div class="loading-spinner"></div>
+        <div class="references-table">
+          <h2>📋 My References</h2>
+          <div id="tableContainer">
+            <div class="loading-spinner"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -144,8 +468,10 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
 
     window.__SUPABASE_URL__ = "https://wrervcydgdrlcndtjboy.supabase.co";
     window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyZXJ2Y3lkZ2RybGNuZHRqYm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NzYxNTYsImV4cCI6MjA3MzU1MjE1Nn0.63M53sZW4LEYMOaxScvtLhQr_6VUj7rOaaGtlR745IM";
+
     const SUPABASE_URL = window.__SUPABASE_URL__;
     const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__;
+
     const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
       ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
           auth: {
@@ -157,8 +483,11 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
       : null;
 
     const userData = (() => {
-      try { return JSON.parse(localStorage.getItem('hrkey_user_data') || 'null'); }
-      catch { return null; }
+      try {
+        return JSON.parse(localStorage.getItem('hrkey_user_data') || 'null');
+      } catch {
+        return null;
+      }
     })();
 
     function getAuthRedirectPath() {
@@ -169,24 +498,42 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
       return '/onboarding';
     }
 
-    async function checkAuth() {
+    function getResumeParserRedirectPath() {
+      return '/cv/builder';
+    }
+
+    function navigateTo(path) {
+      window.location.replace(path);
+      return null;
+    }
+
+    function revealAppShell() {
+      document.body.classList.remove('booting');
+      document.body.classList.add('app-ready');
+      const appShell = document.getElementById('appShell');
+      if (appShell) {
+        appShell.setAttribute('aria-hidden', 'false');
+      }
+    }
+
+    async function resolveBootstrapUser() {
       if (!supabase) {
-        window.location.replace(getAuthRedirectPath());
-        return null;
+        return navigateTo(getAuthRedirectPath());
       }
 
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
         if (sessionError || !session?.user) {
-          window.location.replace(getAuthRedirectPath());
-          return null;
+          return navigateTo(getAuthRedirectPath());
         }
+
+        const userId = session.user.id;
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('title, company')
-          .eq('id', session.user.id)
+          .eq('id', userId)
           .maybeSingle();
 
         if (profileError) {
@@ -194,12 +541,31 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
         }
 
         if (!profile?.title) {
-          window.location.replace(getOnboardingRedirectPath());
-          return null;
+          return navigateTo(getOnboardingRedirectPath());
+        }
+
+        const [
+          { count: experienceCount, error: experiencesError },
+          { count: educationCount, error: educationError }
+        ] = await Promise.all([
+          supabase
+            .from('profile_experiences')
+            .select('id', { count: 'exact', head: true })
+            .eq('profile_id', userId),
+          supabase
+            .from('profile_education')
+            .select('id', { count: 'exact', head: true })
+            .eq('profile_id', userId),
+        ]);
+
+        if (experiencesError || educationError) {
+          console.error('Resume readiness lookup failed:', experiencesError || educationError);
+        } else if ((experienceCount ?? 0) === 0 && (educationCount ?? 0) === 0) {
+          return navigateTo(getResumeParserRedirectPath());
         }
 
         return {
-          id: session.user.id,
+          id: userId,
           name: session.user.user_metadata?.full_name || session.user.email || 'User',
           email: session.user.email,
           wallet: userData?.wallet || 'Not connected',
@@ -208,8 +574,7 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
         };
       } catch (e) {
         console.error('Supabase session check failed:', e);
-        window.location.replace(getAuthRedirectPath());
-        return null;
+        return navigateTo(getAuthRedirectPath());
       }
     }
 
@@ -255,11 +620,16 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
       references: [],
 
       async init() {
-        this.user = await checkAuth();
+        this.user = await resolveBootstrapUser();
         if (!this.user) return;
 
+        revealAppShell();
+
         try {
-          this.plan = JSON.parse(localStorage.getItem('hrkey_user_plan') || '{"plan":"free","features":{"maxReferences":1},"usage":{"referencesUsed":0}}');
+          this.plan = JSON.parse(
+            localStorage.getItem('hrkey_user_plan') ||
+            '{"plan":"free","features":{"maxReferences":1},"usage":{"referencesUsed":0}}'
+          );
         } catch {
           this.plan = { plan: 'free', features: { maxReferences: 1 }, usage: { referencesUsed: 0 } };
         }
@@ -334,9 +704,9 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
                   </td>
                   <td>
                     <div class="action-buttons">
-                      <button class="btn-secondary" onclick="dashboard.viewReference('${ref.id}')">View</button>
+                      <button class="btn-secondary" onclick="window.dashboard.viewReference('${ref.id}')">View</button>
                       ${ref.status === 'completed' && this.plan.plan === 'pro'
-                        ? `<button class="btn-secondary" onclick="dashboard.verifyOnChain('${ref.id}')">Verify</button>`
+                        ? `<button class="btn-secondary" onclick="window.dashboard.verifyOnChain('${ref.id}')">Verify</button>`
                         : ''}
                     </div>
                   </td>
@@ -345,6 +715,7 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
             </tbody>
           </table>
         `;
+
         container.innerHTML = tableHTML;
       },
 
@@ -421,11 +792,11 @@ body.preload .main-content, body.preload .dashboard-header { visibility: hidden;
       }
     };
 
-   if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => window.dashboard.init());
-} else {
-  window.dashboard.init();
-}
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => window.dashboard.init());
+    } else {
+      window.dashboard.init();
+    }
   </script>
 </body>
 </html>
