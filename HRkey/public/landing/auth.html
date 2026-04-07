@@ -1,11 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- MARKER_AUTH: HRKEY_PUBLIC_LANDING_AUTH_V3_FIGMA_MVP -->
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HRKey - Create Account</title>
+  <title>HRKey - Auth Entry</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -26,22 +24,45 @@
       --bg: #ffffff;
     }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html,
-    body {
-      min-height: 100%;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { min-height: 100%; }
 
     body {
       font-family: 'Rubik', Arial, sans-serif;
       background: var(--bg);
       color: var(--text-main);
     }
+
+    body.booting { overflow: hidden; }
+
+    .loading-shell {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #ffffff;
+      color: #374151;
+      z-index: 9999;
+    }
+
+    body.auth-ready .loading-shell { display: none; }
+    body.auth-ready #authShell { display: flex; }
+
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border: 3px solid #d1d5db;
+      border-top-color: var(--teal-primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #authShell { display: none; }
 
     .page {
       min-height: 100vh;
@@ -52,246 +73,52 @@
       background: #ffffff;
     }
 
-    .auth-shell {
-      width: 100%;
-      max-width: 448px;
-    }
+    .auth-shell { width: 100%; max-width: 448px; }
+    .header { text-align: center; margin-bottom: 32px; }
+    .header h1 { font-size: 48px; line-height: 1.1; font-weight: 500; margin-bottom: 12px; letter-spacing: -0.02em; }
+    .header p { font-size: 18px; line-height: 1.5; color: var(--text-muted); }
 
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
+    .referee-banner { display: none; margin-bottom: 24px; padding: 14px 16px; border: 1px solid #99f6e4; background: #f0fdfa; color: #115e59; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+    .referee-banner.active { display: block; }
 
-    .header h1 {
-      font-size: 48px;
-      line-height: 1.1;
-      font-weight: 500;
-      color: #111827;
-      margin-bottom: 12px;
-      letter-spacing: -0.02em;
-    }
+    .google-btn, .submit-btn, .field input { width: 100%; height: 64px; border-radius: 12px; font-family: inherit; font-size: 16px; }
+    .google-btn { display: flex; align-items: center; justify-content: center; gap: 14px; border: 1px solid var(--border); background: #ffffff; color: #111827; cursor: pointer; font-weight: 500; transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease; margin-bottom: 28px; }
+    .google-btn:hover { background: #f9fafb; border-color: #c7cdd4; transform: translateY(-1px); }
+    .google-btn:disabled, .submit-btn:disabled { opacity: 0.7; cursor: wait; transform: none; }
 
-    .header p {
-      font-size: 18px;
-      line-height: 1.5;
-      color: var(--text-muted);
-    }
+    .divider { position: relative; text-align: center; margin-bottom: 28px; color: var(--text-soft); font-size: 16px; line-height: 1; }
+    .divider::before, .divider::after { content: ""; position: absolute; top: 50%; width: calc(50% - 34px); height: 1px; background: var(--border); }
+    .divider::before { left: 0; }
+    .divider::after { right: 0; }
+    .divider span { display: inline-block; padding: 0 10px; background: #ffffff; position: relative; z-index: 1; }
 
-    .referee-banner {
-      display: none;
-      margin-bottom: 24px;
-      padding: 14px 16px;
-      border: 1px solid #99f6e4;
-      background: #f0fdfa;
-      color: #115e59;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.5;
-    }
+    .form { display: flex; flex-direction: column; gap: 24px; }
+    .field { display: flex; flex-direction: column; gap: 10px; }
+    .field label { font-size: 16px; font-weight: 500; color: #374151; }
+    .field input { border: 1px solid var(--border); background: #ffffff; color: #111827; padding: 0 16px; outline: none; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+    .field input::placeholder { color: #6b7280; }
+    .field input:focus { border-color: var(--teal-primary); box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14); }
 
-    .referee-banner.active {
-      display: block;
-    }
+    .submit-wrap { margin-top: 12px; }
+    .submit-btn { border: none; background: var(--teal-primary); color: #ffffff; font-weight: 600; cursor: pointer; transition: background 0.2s ease, transform 0.2s ease; }
+    .submit-btn:hover { background: var(--teal-hover); transform: translateY(-1px); }
 
-    .google-btn,
-    .submit-btn,
-    .field input {
-      width: 100%;
-      height: 64px;
-      border-radius: 12px;
-      font-family: inherit;
-      font-size: 16px;
-    }
+    .footer { margin-top: 28px; text-align: center; font-size: 18px; line-height: 1.5; color: var(--text-muted); }
 
-    .google-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      border: 1px solid var(--border);
-      background: #ffffff;
-      color: #111827;
-      cursor: pointer;
-      font-weight: 500;
-      transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-      margin-bottom: 28px;
-    }
-
-    .google-btn:hover {
-      background: #f9fafb;
-      border-color: #c7cdd4;
-      transform: translateY(-1px);
-    }
-
-    .google-btn:disabled,
-    .submit-btn:disabled {
-      opacity: 0.7;
-      cursor: wait;
-      transform: none;
-    }
-
-    .divider {
-      position: relative;
-      text-align: center;
-      margin-bottom: 28px;
-      color: var(--text-soft);
-      font-size: 16px;
-      line-height: 1;
-    }
-
-    .divider::before,
-    .divider::after {
-      content: "";
-      position: absolute;
-      top: 50%;
-      width: calc(50% - 34px);
-      height: 1px;
-      background: var(--border);
-    }
-
-    .divider::before {
-      left: 0;
-    }
-
-    .divider::after {
-      right: 0;
-    }
-
-    .divider span {
-      display: inline-block;
-      padding: 0 10px;
-      background: #ffffff;
-      position: relative;
-      z-index: 1;
-    }
-
-    .form {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .field label {
-      font-size: 16px;
-      font-weight: 500;
-      color: #374151;
-    }
-
-    .field input {
-      border: 1px solid var(--border);
-      background: #ffffff;
-      color: #111827;
-      padding: 0 16px;
-      outline: none;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .field input::placeholder {
-      color: #6b7280;
-    }
-
-    .field input:focus {
-      border-color: var(--teal-primary);
-      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
-    }
-
-    .submit-wrap {
-      margin-top: 12px;
-    }
-
-    .submit-btn {
-      border: none;
-      background: var(--teal-primary);
-      color: #ffffff;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s ease, transform 0.2s ease;
-    }
-
-    .submit-btn:hover {
-      background: var(--teal-hover);
-      transform: translateY(-1px);
-    }
-
-    .footer {
-      margin-top: 28px;
-      text-align: center;
-      font-size: 18px;
-      line-height: 1.5;
-      color: var(--text-muted);
-    }
-
-    .footer a {
-      color: var(--teal-primary);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .footer a:hover {
-      color: var(--teal-hover);
-      text-decoration: underline;
-    }
-
-    .message {
-      display: none;
-      margin-bottom: 20px;
-      padding: 12px 14px;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.45;
-    }
-
-    .message.show {
-      display: block;
-    }
-
-    .message.error {
-      background: #fef2f2;
-      color: #b91c1c;
-      border: 1px solid #fecaca;
-    }
-
-    .message.success {
-      background: #ecfdf5;
-      color: #047857;
-      border: 1px solid #a7f3d0;
-    }
-
-    @media (max-width: 640px) {
-      .page {
-        padding: 24px 16px;
-      }
-
-      .auth-shell {
-        max-width: 100%;
-      }
-
-      .header h1 {
-        font-size: 40px;
-      }
-
-      .header p,
-      .footer {
-        font-size: 16px;
-      }
-
-      .google-btn,
-      .submit-btn,
-      .field input {
-        height: 58px;
-      }
-    }
+    .message { display: none; margin-bottom: 20px; padding: 12px 14px; border-radius: 12px; font-size: 14px; line-height: 1.45; }
+    .message.show { display: block; }
+    .message.error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .message.success { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
   </style>
 </head>
 
-<body>
-  <main class="page">
+<body class="booting">
+  <div class="loading-shell" id="loadingShell" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <p>Resolving session…</p>
+  </div>
+
+  <main class="page" id="authShell" aria-hidden="true">
     <section class="auth-shell">
       <header class="header">
         <h1>Create your account</h1>
@@ -319,38 +146,17 @@
       <form id="authForm" class="form" novalidate>
         <div class="field">
           <label for="name">Full Name</label>
-          <input
-            type="text"
-            id="name"
-            name="name"
-            placeholder="Enter your full name"
-            autocomplete="name"
-            required
-          >
+          <input type="text" id="name" name="name" placeholder="Enter your full name" autocomplete="name" required>
         </div>
 
         <div class="field">
           <label for="email">Email</label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            placeholder="Enter your email"
-            autocomplete="email"
-            required
-          >
+          <input type="email" id="email" name="email" placeholder="Enter your email" autocomplete="email" required>
         </div>
 
         <div class="field">
           <label for="password">Password</label>
-          <input
-            type="password"
-            id="password"
-            name="password"
-            placeholder="Create a password"
-            autocomplete="new-password"
-            required
-          >
+          <input type="password" id="password" name="password" placeholder="Create a password" autocomplete="new-password" required>
         </div>
 
         <div class="submit-wrap">
@@ -358,17 +164,20 @@
         </div>
       </form>
 
-      <div class="footer">
-        Already have an account? <a href="/landing/login.html">Log in</a>
-      </div>
+      <div class="footer">Already have an account? Use Google sign-in or your email above.</div>
     </section>
   </main>
 
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+    const BOOTSTRAP_KEY = 'hrkey_auth_bootstrap_count';
     const SUPABASE_URL = window.__SUPABASE_URL__;
     const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__;
+    const ROUTES = {
+      ONBOARDING: '/onboarding',
+      APP: '/landing/app.html'
+    };
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         detectSessionInUrl: true,
@@ -377,178 +186,249 @@
       }
     });
 
-    const url = new URL(window.location.href);
+    const state = {
+      hasRedirected: false,
+      isBootstrapping: false
+    };
+    const APP_ACCESS_KEY = 'hrkey_route_granted_app';
 
-    function getNextPath() {
-  const next = url.searchParams.get("next");
-  const allowedPaths = new Set([
-    "/landing/app.html",
-    "/onboarding",
-    "/cv/builder"
-  ]);
+    const messageBox = document.getElementById('messageBox');
+    const form = document.getElementById('authForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const googleBtn = document.getElementById('googleBtn');
 
-  if (!next || !allowedPaths.has(next)) {
-    return "/landing/app.html";
-  }
+    function logBootstrapExecution() {
+      const next = Number(sessionStorage.getItem(BOOTSTRAP_KEY) || '0') + 1;
+      sessionStorage.setItem(BOOTSTRAP_KEY, String(next));
+      console.log('[auth-bootstrap] executed count:', next);
+    }
 
-  return next;
-}
-    const form = document.getElementById("authForm");
-    const submitBtn = document.getElementById("submitBtn");
-    const googleBtn = document.getElementById("googleBtn");
-    const messageBox = document.getElementById("messageBox");
+    function showAuthUI() {
+      sessionStorage.removeItem(APP_ACCESS_KEY);
+      document.body.classList.remove('booting');
+      document.body.classList.add('auth-ready');
+      document.getElementById('authShell').setAttribute('aria-hidden', 'false');
+    }
 
-    supabase.auth.onAuthStateChange((event, session) => {
-      console.log("AUTH STATE CHANGE:", event, !!session);
-      if (event === "SIGNED_IN" && session?.user) {
-        window.location.replace(getNextPath());
-      }
-    });
-
-    function showMessage(text, type = "error") {
+    function showMessage(text, type = 'error') {
       messageBox.textContent = text;
       messageBox.className = `message show ${type}`;
     }
 
     function clearMessage() {
-      messageBox.textContent = "";
-      messageBox.className = "message";
+      messageBox.textContent = '';
+      messageBox.className = 'message';
     }
 
-    const refereeInfo = localStorage.getItem("hrkey_referee_info");
-    if (refereeInfo) {
-      try {
-        const data = JSON.parse(refereeInfo);
-        if (data.hasProvidedReference) {
-          document.getElementById("refereeBanner").classList.add("active");
-          document.getElementById("headerSubtitle").textContent = "Start building your own professional reference profile";
-        }
-      } catch (err) {
-        console.warn("Referee info parse failed:", err);
+    function isProfileComplete(profile) {
+      if (!profile) return false;
+      // Conservative required fields for "complete" profile routing.
+      const required = [profile.full_name, profile.title, profile.company];
+      return required.every((value) => typeof value === 'string' && value.trim().length > 0);
+    }
+
+    async function resolveProfile(userId) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, title, company')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[auth-bootstrap] profile lookup error:', error);
+        return { profile: null, hasProfile: false, isComplete: false };
       }
+
+      const hasProfile = !!data;
+      const isComplete = isProfileComplete(data);
+      console.log('[auth-bootstrap] profile found:', hasProfile);
+      console.log('[auth-bootstrap] profile complete:', isComplete);
+
+      return { profile: data, hasProfile, isComplete };
     }
 
-    const code = url.searchParams.get("code");
-    const errorDesc = url.searchParams.get("error_description");
-    if (errorDesc) {
-      console.error("Auth error:", errorDesc);
-      showMessage(errorDesc, "error");
+    function decideRoute({ session, hasProfile, isComplete }) {
+      if (!session?.user) return { type: 'render_auth_ui' };
+      if (!hasProfile || !isComplete) return { type: 'redirect', to: ROUTES.ONBOARDING };
+      return { type: 'redirect', to: ROUTES.APP };
     }
 
-    if (code) {
-      try {
+    function redirectOnce(path) {
+      if (state.hasRedirected) return;
+      state.hasRedirected = true;
+      if (path === ROUTES.APP) {
+        sessionStorage.setItem(APP_ACCESS_KEY, String(Date.now()));
+      } else {
+        sessionStorage.removeItem(APP_ACCESS_KEY);
+      }
+      console.log('[auth-bootstrap] redirecting to:', path);
+      window.location.replace(path);
+    }
+
+    async function resolveSession(url) {
+      const hasOAuthCode = url.searchParams.has('code');
+      const authError = url.searchParams.get('error_description');
+
+      if (authError) {
+        console.error('[auth-bootstrap] auth callback error:', authError);
+        showMessage(authError, 'error');
+      }
+
+      if (hasOAuthCode) {
         const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
-
         if (error) {
-          console.error("exchangeCodeForSession error:", error);
-          showMessage(error.message || "Authentication failed.", "error");
-        } else {
-          const next = getNextPath();
-          const cleanUrl = `${window.location.origin}/landing/auth.html`;
-          history.replaceState({}, document.title, cleanUrl);
-          window.location.replace(getNextPath());
+          console.error('[auth-bootstrap] exchangeCodeForSession error:', error);
+          showMessage(error.message || 'Authentication callback failed.', 'error');
         }
-      } catch (e) {
-        console.error("Exchange failed:", e);
-        showMessage("Authentication exchange failed.", "error");
+        const cleanUrl = `${window.location.origin}/landing/auth.html`;
+        window.history.replaceState({}, document.title, cleanUrl);
       }
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('[auth-bootstrap] getSession error:', sessionError);
+      }
+
+      console.log('[auth-bootstrap] session found:', !!session?.user);
+      return session;
     }
 
-    googleBtn.addEventListener("click", async () => {
-      clearMessage();
-      googleBtn.disabled = true;
-      const oldText = googleBtn.innerHTML;
-      googleBtn.innerHTML = "<span>Connecting to Google...</span>";
+    async function runBootstrap() {
+      if (state.isBootstrapping) return;
+      state.isBootstrapping = true;
+      logBootstrapExecution();
 
       try {
-        const redirectTo = `${window.location.origin}/landing/auth.html`;
-        const params = new URLSearchParams();
-        params.set("next", getNextPath());
-        const finalRedirect = `${redirectTo}?${params.toString()}`;
+        clearMessage();
+        const url = new URL(window.location.href);
+        const session = await resolveSession(url);
 
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: { redirectTo: finalRedirect }
-        });
+        let hasProfile = false;
+        let isComplete = false;
 
-        if (error) {
-          throw error;
-        }
-      } catch (e) {
-        console.error("Google OAuth failed:", e);
-        showMessage(e?.message || "Failed to connect with Google.", "error");
-        googleBtn.disabled = false;
-        googleBtn.innerHTML = oldText;
-      }
-    });
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      clearMessage();
-
-      const name = document.getElementById("name")?.value?.trim() || "";
-      const email = document.getElementById("email")?.value?.trim() || "";
-      const password = document.getElementById("password")?.value || "";
-
-      if (!name || !email || !password) {
-        showMessage("Please complete all fields.", "error");
-        return;
-      }
-
-      submitBtn.disabled = true;
-      const oldText = submitBtn.textContent;
-      submitBtn.textContent = "Creating account...";
-
-      try {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/landing/auth.html?next=/landing/app.html`,
-            data: {
-              full_name: name
-            }
-          }
-        });
-
-        if (error) {
-          throw error;
+        if (session?.user?.id) {
+          const profileResult = await resolveProfile(session.user.id);
+          hasProfile = profileResult.hasProfile;
+          isComplete = profileResult.isComplete;
         }
 
-        localStorage.setItem("hrkey_user_data", JSON.stringify({
-          name,
-          email,
-          authenticated: !!data?.session,
-          loginDate: new Date().toISOString(),
-          source: refereeInfo ? "referee_conversion" : "direct_signup"
-        }));
+        const decision = decideRoute({ session, hasProfile, isComplete });
+        console.log('[auth-bootstrap] final route decision:', decision.type, decision.to || '(render auth)');
 
-        localStorage.setItem("hrkey_user_plan", JSON.stringify({
-          plan: "free",
-          features: {
-            maxReferences: 1,
-            canUseBlockchain: false,
-            canExportPDF: false
-          },
-          usage: {
-            referencesUsed: 0
-          }
-        }));
-
-        if (data?.session) {
-          window.location.replace("/landing/app.html");
+        if (decision.type === 'redirect') {
+          redirectOnce(decision.to);
           return;
         }
 
-        showMessage("Account created. Check your email to verify your account.", "success");
-      } catch (err) {
-        console.error("Sign up error:", err);
-        showMessage(err?.message || "Could not create the account.", "error");
+        showAuthUI();
+      } catch (error) {
+        console.error('[auth-bootstrap] fatal error:', error);
+        showAuthUI();
+        showMessage('Could not resolve session. Please try again.', 'error');
       } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = oldText;
+        state.isBootstrapping = false;
       }
-    });
+    }
+
+    function bindAuthHandlers() {
+      const refereeInfo = localStorage.getItem('hrkey_referee_info');
+      if (refereeInfo) {
+        try {
+          const data = JSON.parse(refereeInfo);
+          if (data.hasProvidedReference) {
+            document.getElementById('refereeBanner').classList.add('active');
+            document.getElementById('headerSubtitle').textContent = 'Start building your own professional reference profile';
+          }
+        } catch (err) {
+          console.warn('Referee info parse failed:', err);
+        }
+      }
+
+      googleBtn.addEventListener('click', async () => {
+        clearMessage();
+        googleBtn.disabled = true;
+        const oldText = googleBtn.innerHTML;
+        googleBtn.innerHTML = '<span>Connecting to Google...</span>';
+
+        try {
+          const redirectTo = `${window.location.origin}/landing/auth.html`;
+          const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo }
+          });
+
+          if (error) {
+            throw error;
+          }
+        } catch (e) {
+          console.error('Google OAuth failed:', e);
+          showMessage(e?.message || 'Failed to connect with Google.', 'error');
+          googleBtn.disabled = false;
+          googleBtn.innerHTML = oldText;
+        }
+      });
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearMessage();
+
+        const name = document.getElementById('name')?.value?.trim() || '';
+        const email = document.getElementById('email')?.value?.trim() || '';
+        const password = document.getElementById('password')?.value || '';
+
+        if (!name || !email || !password) {
+          showMessage('Please complete all fields.', 'error');
+          return;
+        }
+
+        submitBtn.disabled = true;
+        const oldText = submitBtn.textContent;
+        submitBtn.textContent = 'Creating account...';
+
+        try {
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              emailRedirectTo: `${window.location.origin}/landing/auth.html`,
+              data: { full_name: name }
+            }
+          });
+
+          if (error) throw error;
+
+          localStorage.setItem('hrkey_user_data', JSON.stringify({
+            name,
+            email,
+            authenticated: !!data?.session,
+            loginDate: new Date().toISOString(),
+            source: refereeInfo ? 'referee_conversion' : 'direct_signup'
+          }));
+
+          localStorage.setItem('hrkey_user_plan', JSON.stringify({
+            plan: 'free',
+            features: { maxReferences: 1, canUseBlockchain: false, canExportPDF: false },
+            usage: { referencesUsed: 0 }
+          }));
+
+          if (data?.session) {
+            await runBootstrap();
+            return;
+          }
+
+          showMessage('Account created. Check your email to verify your account.', 'success');
+        } catch (err) {
+          console.error('Sign up error:', err);
+          showMessage(err?.message || 'Could not create the account.', 'error');
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = oldText;
+        }
+      });
+    }
+
+    bindAuthHandlers();
+    runBootstrap();
   </script>
 </body>
 </html>

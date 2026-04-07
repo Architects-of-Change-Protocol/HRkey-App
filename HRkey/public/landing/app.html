@@ -471,16 +471,9 @@
 
     const SUPABASE_URL = window.__SUPABASE_URL__;
     const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__;
+    const AUTH_ENTRY_PATH = '/landing/auth.html';
 
-    const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
-      ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          auth: {
-            detectSessionInUrl: true,
-            persistSession: true,
-            autoRefreshToken: true
-          }
-        })
-      : null;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const userData = (() => {
       try {
@@ -489,23 +482,7 @@
         return null;
       }
     })();
-
-    function getAuthRedirectPath() {
-      return '/landing/auth.html';
-    }
-
-    function getOnboardingRedirectPath() {
-      return '/onboarding';
-    }
-
-    function getResumeParserRedirectPath() {
-      return '/cv/builder';
-    }
-
-    function navigateTo(path) {
-      window.location.replace(path);
-      return null;
-    }
+    const APP_ACCESS_KEY = 'hrkey_route_granted_app';
 
     function revealAppShell() {
       document.body.classList.remove('booting');
@@ -516,66 +493,31 @@
       }
     }
 
-    async function resolveBootstrapUser() {
-      if (!supabase) {
-        return navigateTo(getAuthRedirectPath());
+    function showBlockedAppShell() {
+      const bootSplash = document.getElementById('bootSplash');
+      if (!bootSplash) return;
+      bootSplash.innerHTML = `
+        <p style="font-size: 18px; margin-bottom: 8px;">Access gated by centralized entry point.</p>
+        <p style="font-size: 14px; color: #94a3b8;">Open <a href="${AUTH_ENTRY_PATH}" style="color:#00C4C7;">${AUTH_ENTRY_PATH}</a> to continue.</p>
+      `;
+      document.body.classList.remove('booting');
+    }
+
+    function hasEntryAuthorization() {
+      return Boolean(sessionStorage.getItem(APP_ACCESS_KEY));
+    }
+
+    function resolveDashboardUser() {
+      if (userData && userData.authenticated) {
+        return userData;
       }
 
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError || !session?.user) {
-          return navigateTo(getAuthRedirectPath());
-        }
-
-        const userId = session.user.id;
-
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('title, company')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (profileError) {
-          console.error('Profile lookup failed:', profileError);
-        }
-
-        if (!profile?.title) {
-          return navigateTo(getOnboardingRedirectPath());
-        }
-
-        const [
-          { count: experienceCount, error: experiencesError },
-          { count: educationCount, error: educationError }
-        ] = await Promise.all([
-          supabase
-            .from('profile_experiences')
-            .select('id', { count: 'exact', head: true })
-            .eq('profile_id', userId),
-          supabase
-            .from('profile_education')
-            .select('id', { count: 'exact', head: true })
-            .eq('profile_id', userId),
-        ]);
-
-        if (experiencesError || educationError) {
-          console.error('Resume readiness lookup failed:', experiencesError || educationError);
-        } else if ((experienceCount ?? 0) === 0 && (educationCount ?? 0) === 0) {
-          return navigateTo(getResumeParserRedirectPath());
-        }
-
-        return {
-          id: userId,
-          name: session.user.user_metadata?.full_name || session.user.email || 'User',
-          email: session.user.email,
-          wallet: userData?.wallet || 'Not connected',
-          authenticated: true,
-          profile: profile || null
-        };
-      } catch (e) {
-        console.error('Supabase session check failed:', e);
-        return navigateTo(getAuthRedirectPath());
-      }
+      return {
+        name: 'HRKey User',
+        email: '',
+        wallet: 'Not connected',
+        authenticated: true
+      };
     }
 
     async function initiateStripeCheckout() {
@@ -620,8 +562,13 @@
       references: [],
 
       async init() {
-        this.user = await resolveBootstrapUser();
-        if (!this.user) return;
+        if (!hasEntryAuthorization()) {
+          console.warn('App bootstrap blocked: no entry authorization marker present.');
+          showBlockedAppShell();
+          return;
+        }
+
+        this.user = resolveDashboardUser();
 
         revealAppShell();
 
@@ -764,16 +711,15 @@
 
       logout() {
         if (confirm('Are you sure you want to logout?')) {
+          sessionStorage.removeItem(APP_ACCESS_KEY);
           localStorage.removeItem('hrkey_user_data');
           localStorage.removeItem('hrkey_user_plan');
           localStorage.removeItem('hrkey_references');
           localStorage.removeItem('hrkey_session');
 
-          if (supabase) {
-            supabase.auth.signOut().catch(e => console.error('Supabase signout error:', e));
-          }
+          supabase.auth.signOut().catch(e => console.error('Supabase signout error:', e));
 
-          window.location.replace(getAuthRedirectPath());
+          window.location.replace(AUTH_ENTRY_PATH);
         }
       },
 
