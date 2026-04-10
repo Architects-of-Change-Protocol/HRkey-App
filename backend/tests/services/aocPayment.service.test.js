@@ -11,7 +11,7 @@ jest.unstable_mockModule('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => mockSupabaseClient)
 }));
 
-const { processAccessPayment, getUserBalance } = await import('../../services/aocPayment.service.js');
+const { processAccessPayment, getUserBalance, listUserTransactions, getUserEarningsSummary } = await import('../../services/aocPayment.service.js');
 
 function createTableBuilder(tableState) {
   const state = {
@@ -46,6 +46,9 @@ function createTableBuilder(tableState) {
       const row = tableState[state.filters.user_id] || null;
       return { data: row, error: null };
     }),
+    or: jest.fn(() => builder),
+    order: jest.fn(() => builder),
+    limit: jest.fn(async () => ({ data: tableState, error: null })),
     single: jest.fn(async () => {
       if (state.mode === 'upsert') {
         const row = state.payload[0];
@@ -113,5 +116,62 @@ describe('aocPayment.service', () => {
 
     const balance = await getUserBalance('new-user');
     expect(balance.aoc_balance).toBe(0);
+  });
+
+  test('lista transacciones del usuario', async () => {
+    const txs = [
+      {
+        id: 'tx-1',
+        from_user_id: 'recruiter-1',
+        to_user_id: 'candidate-1',
+        amount: 8,
+        type: 'access_payment',
+        reference_id: 'ref-1',
+        created_at: new Date().toISOString()
+      }
+    ];
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'aoc_transactions') return createTableBuilder(txs);
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = await listUserTransactions('candidate-1', { limit: 10 });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('tx-1');
+  });
+
+  test('resumen de earnings calcula total y promedio', async () => {
+    const now = new Date().toISOString();
+    const txs = [
+      {
+        id: 'tx-1',
+        from_user_id: 'recruiter-1',
+        to_user_id: 'candidate-1',
+        amount: 8,
+        type: 'access_payment',
+        reference_id: 'ref-1',
+        created_at: now
+      },
+      {
+        id: 'tx-2',
+        from_user_id: 'recruiter-2',
+        to_user_id: 'candidate-1',
+        amount: 4,
+        type: 'access_payment',
+        reference_id: 'ref-2',
+        created_at: now
+      }
+    ];
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'aoc_transactions') return createTableBuilder(txs);
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const summary = await getUserEarningsSummary('candidate-1', { days: 30 });
+    expect(summary.totalEarnedRecent).toBe(12);
+    expect(summary.paidAccessCount).toBe(2);
+    expect(summary.averagePerAccess).toBe(6);
   });
 });

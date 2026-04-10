@@ -5,6 +5,14 @@ import { supabase } from "@/lib/supabaseClient";
 import { apiGet, apiPost } from "@/lib/apiClient";
 import ConsentAuthorizationModal from "@/components/consent/ConsentAuthorizationModal";
 import PermissionStatusCard from "@/components/consent/PermissionStatusCard";
+import AocWalletSummaryCard from "@/components/aoc-wallet/AocWalletSummaryCard";
+import AocEarningsCard from "@/components/aoc-wallet/AocEarningsCard";
+import AocTransactionList from "@/components/aoc-wallet/AocTransactionList";
+import RlusdConversionCard from "@/components/aoc-wallet/RlusdConversionCard";
+import type {
+  AocEarningsSummary,
+  AocTransaction,
+} from "@/components/aoc-wallet/types";
 
 type ReferenceAnswer = {
   questionId: string;
@@ -112,6 +120,9 @@ export default function CandidateEvaluationPage() {
       metadata?: { permissions?: string[] } | null;
     }>
   >([]);
+  const [aocBalance, setAocBalance] = useState(0);
+  const [aocTransactions, setAocTransactions] = useState<AocTransaction[]>([]);
+  const [aocSummary, setAocSummary] = useState<AocEarningsSummary | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -197,6 +208,60 @@ export default function CandidateEvaluationPage() {
 
   useEffect(() => {
     loadPermissionGrants();
+  }, []);
+
+  const trackWalletEvent = async (
+    eventName:
+      | "wallet_viewed"
+      | "earnings_viewed"
+      | "rlusd_conversion_cta_clicked"
+  ) => {
+    const payload = {
+      event: eventName,
+      context: "candidate_wallet",
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      await apiPost("/api/analytics/events", payload);
+    } catch (error) {
+      console.info("Wallet analytics fallback", payload, error);
+    }
+  };
+
+  useEffect(() => {
+    const loadWallet = async () => {
+      try {
+        const [balanceResponse, transactionsResponse, summaryResponse] =
+          await Promise.all([
+            apiGet<{
+              ok: boolean;
+              balance: number;
+            }>("/api/aoc/balance"),
+            apiGet<{
+              ok: boolean;
+              transactions: AocTransaction[];
+            }>("/api/aoc/transactions"),
+            apiGet<{
+              ok: boolean;
+              summary: AocEarningsSummary;
+            }>("/api/aoc/earnings-summary"),
+          ]);
+
+        setAocBalance(Number(balanceResponse?.balance || 0));
+        setAocTransactions(transactionsResponse?.transactions || []);
+        setAocSummary(summaryResponse?.summary || null);
+      } catch (err) {
+        console.error("Unable to load AOC wallet data", err);
+        setAocBalance(0);
+        setAocTransactions([]);
+        setAocSummary(null);
+      }
+    };
+
+    loadWallet();
+    trackWalletEvent("wallet_viewed");
+    trackWalletEvent("earnings_viewed");
   }, []);
 
   const hrScore = evaluation?.scoring.hrScoreResult.hrScore ?? 0;
@@ -451,6 +516,30 @@ export default function CandidateEvaluationPage() {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Tu wallet AOC</h2>
+              <span className="text-xs text-slate-500">Tus permisos e ingresos</span>
+            </div>
+            <p className="text-sm text-slate-600">
+              Tus permisos verificables pueden generarte ingresos cuando empresas acceden a tu perfil.
+            </p>
+            <AocWalletSummaryCard balance={aocBalance} />
+            <AocEarningsCard summary={aocSummary} />
+            <div className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900">Historial de transacciones</h3>
+              <AocTransactionList
+                userId={evaluation.userId}
+                transactions={aocTransactions}
+              />
+            </div>
+            <RlusdConversionCard
+              onIntent={() => {
+                trackWalletEvent("rlusd_conversion_cta_clicked");
+              }}
+            />
           </div>
 
           <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4">

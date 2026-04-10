@@ -1328,6 +1328,8 @@ app.get('/api/reference-access/capabilities', requireAuth, referenceAccessContro
 app.get('/api/reference-access/history', requireAuth, referenceAccessController.getMyAccessHistory);
 app.get('/api/aoc/balance', requireAuth, aocEconomyController.getMyAocBalance);
 app.post('/api/aoc/topup', requireAuth, aocEconomyController.topupMyAocBalance);
+app.get('/api/aoc/transactions', requireAuth, aocEconomyController.getMyAocTransactions);
+app.get('/api/aoc/earnings-summary', requireAuth, aocEconomyController.getMyAocEarningsSummary);
 
 /**
  * GET /api/reference-pack/:identifier

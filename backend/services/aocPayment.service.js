@@ -84,6 +84,52 @@ export async function topupBalance({ userId, amount }) {
   return { ...updated, aoc_balance: Number(updated.aoc_balance) };
 }
 
+export async function listUserTransactions(userId, { limit = 25 } = {}) {
+  if (!userId) {
+    const error = new Error('User ID is required');
+    error.status = 400;
+    throw error;
+  }
+
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+  const { data, error } = await supabase
+    .from('aoc_transactions')
+    .select('id, from_user_id, to_user_id, amount, type, reference_id, created_at')
+    .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+
+  if (error) throw error;
+  return (data || []).map((row) => ({
+    ...row,
+    amount: Number(row.amount || 0)
+  }));
+}
+
+export async function getUserEarningsSummary(userId, { days = 30 } = {}) {
+  const transactions = await listUserTransactions(userId, { limit: 200 });
+  const lookbackDays = Math.max(1, Math.min(Number(days) || 30, 365));
+  const lookbackStartMs = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
+
+  const incoming = transactions.filter((tx) => tx.to_user_id === userId);
+  const recentIncoming = incoming.filter((tx) => {
+    const createdAtMs = tx.created_at ? new Date(tx.created_at).getTime() : 0;
+    return Number.isFinite(createdAtMs) && createdAtMs >= lookbackStartMs;
+  });
+
+  const totalEarnedRecent = recentIncoming.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+  const paidAccessCount = recentIncoming.filter((tx) => tx.type === 'access_payment').length;
+
+  return {
+    periodDays: lookbackDays,
+    totalEarnedRecent: roundAmount(totalEarnedRecent),
+    paidAccessCount,
+    averagePerAccess: paidAccessCount > 0 ? roundAmount(totalEarnedRecent / paidAccessCount) : 0,
+    totalEarnedHistorical: roundAmount(incoming.reduce((acc, tx) => acc + Number(tx.amount || 0), 0)),
+    incomingTransactionCount: incoming.length
+  };
+}
+
 async function createTransaction({ fromUserId, toUserId, amount, referenceId }) {
   const { data, error } = await supabase
     .from('aoc_transactions')
@@ -182,5 +228,7 @@ export default {
   getAccessPrice,
   getUserBalance,
   topupBalance,
+  listUserTransactions,
+  getUserEarningsSummary,
   processAccessPayment
 };
