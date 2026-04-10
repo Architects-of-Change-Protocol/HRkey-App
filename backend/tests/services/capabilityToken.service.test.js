@@ -56,7 +56,7 @@ describe('capabilityToken.service', () => {
             candidate_user_id: 'candidate-1',
             resource_type: 'candidate_reference_data',
             resource_id: 'candidate-1',
-            allowed_actions: [CapabilityActions.READ_REFERENCES],
+            allowed_actions: ['read_references'],
             grantee_type: CapabilityGranteeTypes.LINK,
             token_jti: '11111111-1111-4111-8111-111111111111',
             token_hint: 'hint1234',
@@ -76,7 +76,7 @@ describe('capabilityToken.service', () => {
     const result = await issueCapabilityGrant({
       candidateUserId: 'candidate-1',
       ownerUserId: 'candidate-1',
-      allowedActions: [CapabilityActions.READ_REFERENCES]
+      allowedActions: ['read_references']
     });
 
     expect(result.capabilityToken.startsWith('cap_')).toBe(true);
@@ -117,7 +117,16 @@ describe('capabilityToken.service', () => {
       });
       return issueCapabilityGrant({
         candidateUserId: 'candidate-1',
-        ownerUserId: 'candidate-1'
+        ownerUserId: 'candidate-1',
+        aocCapabilityRecord: {
+          capability: {
+            capability_hash: 'cap-token-2',
+            subject: 'did:hrkey:user:candidate-1',
+            grantee: 'did:hrkey:user:public-link',
+            permissions: ['read_references', 'read_reference_pack']
+          },
+          capability_hash: 'cap-token-2'
+        }
       });
     })();
 
@@ -133,7 +142,7 @@ describe('capabilityToken.service', () => {
 
     const validated = await validateCapabilityToken({
       token: issued.capabilityToken,
-      action: CapabilityActions.READ_REFERENCE_PACK,
+      action: 'read_reference_pack',
       resourceType: 'candidate_reference_data',
       resourceId: 'candidate-1',
       candidateUserId: 'candidate-1',
@@ -141,6 +150,68 @@ describe('capabilityToken.service', () => {
     });
 
     expect(validated.grant.id).toBe('grant-2');
+  });
+
+  test('denies valid legacy token when persisted AOC capability is missing', async () => {
+    const issued = await (async () => {
+      let insertResponse;
+      fromMock.mockImplementation((table) => {
+        if (table === 'capability_grants') {
+          const builder = createBuilder();
+          builder.insert = jest.fn((payload) => {
+            insertResponse = payload[0];
+            return builder;
+          });
+          builder.single = jest.fn(async () => ({
+            data: {
+              id: 'grant-2b',
+              ...insertResponse,
+              token_jti: '22222222-2222-4222-8222-222222222223',
+              aoc_capability: null
+            },
+            error: null
+          }));
+          builder.maybeSingle = jest.fn(async () => ({
+            data: {
+              id: 'grant-2b',
+              ...insertResponse,
+              token_jti: '22222222-2222-4222-8222-222222222223',
+              aoc_capability: null
+            },
+            error: null
+          }));
+          return builder;
+        }
+        throw new Error(`Unexpected table ${table}`);
+      });
+      return issueCapabilityGrant({
+        candidateUserId: 'candidate-1',
+        ownerUserId: 'candidate-1'
+      });
+    })();
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'capability_grants') {
+        return createBuilder({
+          data: { ...issued.grant, aoc_capability: null, aoc_capability_hash: null },
+          error: null
+        });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    await expect(validateCapabilityToken({
+      token: issued.capabilityToken,
+      action: 'read_reference_pack',
+      resourceType: 'candidate_reference_data',
+      resourceId: 'candidate-1',
+      candidateUserId: 'candidate-1',
+      req: { headers: {} }
+    })).rejects.toMatchObject({
+      status: 403,
+      reason: 'CONSENT_NOT_ACTIVE',
+      reason_code: 'AOC_CAPABILITY_MISSING'
+    });
   });
 
   test('expired token denied', async () => {
@@ -169,7 +240,7 @@ describe('capabilityToken.service', () => {
       return issueCapabilityGrant({
         candidateUserId: 'candidate-1',
         ownerUserId: 'candidate-1',
-        allowedActions: [CapabilityActions.READ_REFERENCES]
+        allowedActions: ['read_references']
       });
     })();
 
@@ -182,7 +253,7 @@ describe('capabilityToken.service', () => {
 
     await expect(validateCapabilityToken({
       token: issued.capabilityToken,
-      action: CapabilityActions.READ_REFERENCES,
+      action: 'read_references',
       resourceType: 'candidate_reference_data',
       resourceId: 'candidate-1',
       candidateUserId: 'candidate-1',
@@ -247,7 +318,7 @@ describe('capabilityToken.service', () => {
       return issueCapabilityGrant({
         candidateUserId: 'candidate-1',
         ownerUserId: 'candidate-1',
-        allowedActions: [CapabilityActions.READ_REFERENCES]
+        allowedActions: ['read_references']
       });
     })();
 
@@ -260,7 +331,7 @@ describe('capabilityToken.service', () => {
 
     await expect(validateCapabilityToken({
       token: issued.capabilityToken,
-      action: CapabilityActions.READ_REFERENCES,
+      action: 'read_references',
       resourceType: 'candidate_reference_data',
       resourceId: 'candidate-1',
       candidateUserId: 'candidate-1',
@@ -282,7 +353,7 @@ describe('capabilityToken.service', () => {
             data: {
               id: 'grant-6',
               ...insertResponse,
-              allowed_actions: [CapabilityActions.READ_REFERENCES],
+              allowed_actions: ['read_references'],
               token_jti: '66666666-6666-4666-8666-666666666666'
             },
             error: null
@@ -294,7 +365,7 @@ describe('capabilityToken.service', () => {
       return issueCapabilityGrant({
         candidateUserId: 'candidate-1',
         ownerUserId: 'candidate-1',
-        allowedActions: [CapabilityActions.READ_REFERENCES]
+        allowedActions: ['read_references']
       });
     })();
 
@@ -307,7 +378,7 @@ describe('capabilityToken.service', () => {
 
     await expect(validateCapabilityToken({
       token: issued.capabilityToken,
-      action: CapabilityActions.READ_REFERENCE_PACK,
+      action: 'read_reference_pack',
       resourceType: 'candidate_reference_data',
       resourceId: 'candidate-1',
       candidateUserId: 'candidate-1',
@@ -318,7 +389,7 @@ describe('capabilityToken.service', () => {
   test('malformed token denied', async () => {
     await expect(validateCapabilityToken({
       token: 'invalid-token',
-      action: CapabilityActions.READ_REFERENCES,
+      action: 'read_references',
       resourceType: 'candidate_reference_data',
       resourceId: 'candidate-1',
       candidateUserId: 'candidate-1',
@@ -329,7 +400,7 @@ describe('capabilityToken.service', () => {
   test('missing token denied', async () => {
     await expect(validateCapabilityToken({
       token: null,
-      action: CapabilityActions.READ_REFERENCES,
+      action: 'read_references',
       resourceType: 'candidate_reference_data',
       resourceId: 'candidate-1',
       candidateUserId: 'candidate-1',

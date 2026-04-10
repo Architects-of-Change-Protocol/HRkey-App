@@ -48,6 +48,34 @@ function isAocCapabilityExpired(grant, currentTime = now()) {
   return new Date(grant.aoc_expires_at).getTime() < currentTime.getTime();
 }
 
+function evaluateAocReadiness(grant, currentTime = now()) {
+  const storedCapability = getStoredCapabilityForGrant(grant);
+
+  if (!storedCapability) {
+    return {
+      ready: false,
+      reason_code: 'AOC_CAPABILITY_MISSING',
+      source_of_truth: 'aoc_capability'
+    };
+  }
+
+  if (isAocCapabilityExpired(grant, currentTime)) {
+    return {
+      ready: false,
+      reason_code: 'AOC_CAPABILITY_EXPIRED',
+      source_of_truth: 'aoc_capability',
+      capability: storedCapability
+    };
+  }
+
+  return {
+    ready: true,
+    reason_code: null,
+    source_of_truth: 'aoc_capability',
+    capability: storedCapability
+  };
+}
+
 export function getStoredCapabilityForGrant(grant) {
   if (!grant || grant.status !== 'active') return null;
   if (!grant.aoc_capability) return null;
@@ -141,8 +169,18 @@ async function persistGrantUpdate(id, fields) {
 }
 
 function buildStatus(grant, currentTime = now()) {
+  const aocReadiness = evaluateAocReadiness(grant, currentTime);
+
   if (!grant) {
-    return { exists: false, status: 'none', isActive: false, grant: null };
+    return {
+      exists: false,
+      status: 'none',
+      isActive: false,
+      grant: null,
+      source_of_truth: 'aoc_capability',
+      authorizationReady: false,
+      reason_code: aocReadiness.reason_code
+    };
   }
 
   if (grant.status === 'revoked') {
@@ -154,10 +192,27 @@ function buildStatus(grant, currentTime = now()) {
   }
 
   if (grant.status === 'active') {
-    return { exists: true, status: 'active', isActive: true, grant };
+    return {
+      exists: true,
+      status: 'active',
+      isActive: true,
+      grant,
+      source_of_truth: aocReadiness.source_of_truth,
+      authorizationReady: aocReadiness.ready,
+      reason_code: aocReadiness.reason_code,
+      capability: aocReadiness.capability || null
+    };
   }
 
-  return { exists: true, status: grant.status || 'none', isActive: false, grant };
+  return {
+    exists: true,
+    status: grant.status || 'none',
+    isActive: false,
+    grant,
+    source_of_truth: aocReadiness.source_of_truth,
+    authorizationReady: false,
+    reason_code: aocReadiness.reason_code
+  };
 }
 
 async function normalizeExpiredGrant(grant) {
@@ -588,9 +643,8 @@ export async function assertRecruiterCanAccessReferencePack({
   }
 
 
-  const enforceAoc = process.env.AOC_ENFORCE === 'true';
-  const storedCapability = getStoredCapabilityForGrant(status.grant);
-  if (enforceAoc && !storedCapability) {
+  const aocReadiness = evaluateAocReadiness(status.grant);
+  if (!aocReadiness.ready) {
     await recordAccessDecision({
       actorUserId: recruiterUserId,
       actorCompanyId: recruiterStatus.signer?.company_id || null,
@@ -600,51 +654,59 @@ export async function assertRecruiterCanAccessReferencePack({
       targetOwnerId: candidateUserId,
       result: 'denied',
       reason: AccessDecisionReasons.CONSENT_NOT_ACTIVE,
-      metadata: { eventType: 'reference_access_denied', recruiterUserId, reason_code: 'AOC_CAPABILITY_MISSING' },
+      metadata: {
+        eventType: 'reference_access_denied',
+        recruiterUserId,
+        reason_code: aocReadiness.reason_code || 'AOC_CAPABILITY_MISSING',
+        source_of_truth: 'aoc_capability',
+        legacy_grant_status: status.grant?.status || null,
+        legacy_grant_insufficient: true
+      },
       req
     });
 
     const error = new Error('A valid AOC capability is required');
     error.status = 403;
-    error.reason_code = 'AOC_CAPABILITY_MISSING';
+    error.reason_code = aocReadiness.reason_code || 'AOC_CAPABILITY_MISSING';
     throw error;
   }
 
-  if (enforceAoc) {
-    const validation = await validateStoredAocCapability({
-      capabilityRecord: storedCapability,
-      grant: status.grant,
-      subjectDid: toDid(candidateUserId),
-      granteeDid: toDid(recruiterUserId),
-      requestedPermissions: [CapabilityActions.READ_REFERENCES],
+  const validation = await validateStoredAocCapability({
+    capabilityRecord: aocReadiness.capability,
+    grant: status.grant,
+    subjectDid: toDid(candidateUserId),
+    granteeDid: toDid(recruiterUserId),
+    requestedPermissions: [CapabilityActions.READ_REFERENCES],
+    req
+  });
+
+  if (!validation.isValid) {
+    const reasonCode = validation.reason_code || 'AOC_CAPABILITY_INVALID';
+    await recordAccessDecision({
+      actorUserId: recruiterUserId,
+      actorCompanyId: recruiterStatus.signer?.company_id || null,
+      action: 'read',
+      targetType: 'reference_pack',
+      targetId,
+      targetOwnerId: candidateUserId,
+      result: 'denied',
+      reason: AccessDecisionReasons.CONSENT_NOT_ACTIVE,
+      metadata: {
+        eventType: 'reference_access_denied',
+        recruiterUserId,
+        reason_code: reasonCode,
+        capability_validation_result: validation.validation_result || null,
+        source_of_truth: 'aoc_capability',
+        legacy_grant_status: status.grant?.status || null,
+        legacy_grant_insufficient: true
+      },
       req
     });
 
-    if (!validation.isValid) {
-      const reasonCode = validation.reason_code || 'AOC_CAPABILITY_INVALID';
-      await recordAccessDecision({
-        actorUserId: recruiterUserId,
-        actorCompanyId: recruiterStatus.signer?.company_id || null,
-        action: 'read',
-        targetType: 'reference_pack',
-        targetId,
-        targetOwnerId: candidateUserId,
-        result: 'denied',
-        reason: AccessDecisionReasons.CONSENT_NOT_ACTIVE,
-        metadata: {
-          eventType: 'reference_access_denied',
-          recruiterUserId,
-          reason_code: reasonCode,
-          capability_validation_result: validation.validation_result || null
-        },
-        req
-      });
-
-      const error = new Error('Stored AOC capability is invalid');
-      error.status = 403;
-      error.reason_code = reasonCode;
-      throw error;
-    }
+    const error = new Error('Stored AOC capability is invalid');
+    error.status = 403;
+    error.reason_code = reasonCode;
+    throw error;
   }
 
   await recordAccessDecision({
@@ -660,7 +722,8 @@ export async function assertRecruiterCanAccessReferencePack({
       recruiterUserId,
       referenceAccessGrantId: status.grant?.id || null,
       expiresAt: status.grant?.expires_at || null,
-      eventType: 'reference_access_allowed'
+      eventType: 'reference_access_allowed',
+      source_of_truth: 'aoc_capability'
     },
     req
   });

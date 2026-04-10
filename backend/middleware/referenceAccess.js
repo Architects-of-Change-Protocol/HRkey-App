@@ -57,6 +57,18 @@ function toDid(value) {
   return `did:hrkey:user:${value}`;
 }
 
+function toStoredCapabilityRecord(grant) {
+  if (!grant || grant.status !== 'active' || !grant.aoc_capability) {
+    return null;
+  }
+  return {
+    capability: grant.aoc_capability,
+    capability_hash: grant.aoc_capability_hash || null,
+    parent_consent_hash: grant.aoc_parent_consent_hash || null,
+    expires_at: grant.aoc_expires_at || null
+  };
+}
+
 async function enforceAocAuthorization({ req, subject, capabilityAction, requesterUserId, aocOperation = null, capability = null }) {
   const operation = aocOperation || mapLegacyActionToOperation(capabilityAction);
   const subjectDid = toDid(subject.candidateUserId);
@@ -233,6 +245,7 @@ export function requireReferenceAccessPermission({
         req.referenceAccess.accessLevel = 'capability_token';
         req.referenceAccess.capability = validated;
         req.referenceAccess.grant = validated.grant;
+        req.referenceAccess.resolvedCapability = toStoredCapabilityRecord(validated.grant);
         return next();
       }
 
@@ -250,12 +263,7 @@ export function requireReferenceAccessPermission({
       });
 
       req.referenceAccess.grant = grant;
-      req.referenceAccess.resolvedCapability = {
-        capability: grant?.aoc_capability || null,
-        capability_hash: grant?.aoc_capability_hash || null,
-        parent_consent_hash: grant?.aoc_parent_consent_hash || null,
-        expires_at: grant?.aoc_expires_at || null
-      };
+      req.referenceAccess.resolvedCapability = toStoredCapabilityRecord(grant);
 
       await enforceAocAuthorization({
         req,

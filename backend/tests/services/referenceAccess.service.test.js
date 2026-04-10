@@ -228,7 +228,23 @@ describe('referenceAccess.service', () => {
     fromMock.mockImplementation((table) => {
       if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
       if (table === 'reference_pack_access_grants') {
-        return createBuilder({ data: { id: 'grant-7', status: 'active', candidate_user_id: 'candidate-1', recruiter_user_id: 'recruiter-1', expires_at: '2030-01-01T00:00:00.000Z' }, error: null });
+        return createBuilder({
+          data: {
+            id: 'grant-7',
+            status: 'active',
+            candidate_user_id: 'candidate-1',
+            recruiter_user_id: 'recruiter-1',
+            expires_at: '2030-01-01T00:00:00.000Z',
+            aoc_capability: {
+              capability_hash: 'cap-allow-1',
+              subject: 'did:hrkey:user:candidate-1',
+              grantee: 'did:hrkey:user:recruiter-1',
+              permissions: ['read_references']
+            },
+            aoc_expires_at: '2030-01-01T00:00:00.000Z'
+          },
+          error: null
+        });
       }
       throw new Error(`Unexpected table ${table}`);
     });
@@ -239,10 +255,7 @@ describe('referenceAccess.service', () => {
 
 
 
-  test('enforce mode denies active grant without persisted AOC capability', async () => {
-    const previousEnforce = process.env.AOC_ENFORCE;
-    process.env.AOC_ENFORCE = 'true';
-
+  test('denies active grant without persisted AOC capability', async () => {
     fromMock.mockImplementation((table) => {
       if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
       if (table === 'reference_pack_access_grants') {
@@ -253,14 +266,16 @@ describe('referenceAccess.service', () => {
 
     await expect(assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' }))
       .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_MISSING' });
-
-    process.env.AOC_ENFORCE = previousEnforce;
+    expect(recordAccessDecisionMock).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({
+        source_of_truth: 'aoc_capability',
+        legacy_grant_insufficient: true,
+        reason_code: 'AOC_CAPABILITY_MISSING'
+      })
+    }));
   });
 
-  test('enforce mode denies invalid persisted AOC capability', async () => {
-    const previousEnforce = process.env.AOC_ENFORCE;
-    process.env.AOC_ENFORCE = 'true';
-
+  test('denies invalid persisted AOC capability', async () => {
     fromMock.mockImplementation((table) => {
       if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
       if (table === 'reference_pack_access_grants') {
@@ -282,14 +297,9 @@ describe('referenceAccess.service', () => {
 
     await expect(assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' }))
       .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_INVALID' });
-
-    process.env.AOC_ENFORCE = previousEnforce;
   });
 
-  test('enforce mode denies expired persisted AOC capability', async () => {
-    const previousEnforce = process.env.AOC_ENFORCE;
-    process.env.AOC_ENFORCE = 'true';
-
+  test('denies expired persisted AOC capability', async () => {
     fromMock.mockImplementation((table) => {
       if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
       if (table === 'reference_pack_access_grants') {
@@ -311,14 +321,9 @@ describe('referenceAccess.service', () => {
 
     await expect(assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' }))
       .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_EXPIRED' });
-
-    process.env.AOC_ENFORCE = previousEnforce;
   });
 
-  test('enforce mode allows active grant with valid persisted AOC capability', async () => {
-    const previousEnforce = process.env.AOC_ENFORCE;
-    process.env.AOC_ENFORCE = 'true';
-
+  test('allows active grant with valid persisted AOC capability', async () => {
     fromMock.mockImplementation((table) => {
       if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
       if (table === 'reference_pack_access_grants') {
@@ -345,8 +350,6 @@ describe('referenceAccess.service', () => {
 
     const grant = await assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' });
     expect(grant.id).toBe('grant-9');
-
-    process.env.AOC_ENFORCE = previousEnforce;
   });
 
   test('getReferenceAccessStatus reports none when no grant exists', async () => {
