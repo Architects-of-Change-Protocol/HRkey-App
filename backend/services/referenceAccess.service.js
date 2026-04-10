@@ -11,7 +11,7 @@ import {
   CapabilityActions,
   CapabilityResourceTypes
 } from './capabilityToken.service.js';
-import { authorizeAocExecution, HrkOperations } from './aocRuntime.service.js';
+import { HrkOperations, mintAocCapability } from './aocRuntime.service.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://example.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key';
@@ -22,6 +22,48 @@ function toDid(value) {
   if (!value) return null;
   if (typeof value === 'string' && value.startsWith('did:')) return value;
   return `did:hrkey:user:${value}`;
+}
+
+
+function buildAocScope({ candidateUserId, operation, resourceRef }) {
+  return [
+    { type: 'candidate', ref: String(candidateUserId) },
+    { type: 'operation', ref: String(operation) },
+    { type: 'resource', ref: String(resourceRef || candidateUserId) }
+  ];
+}
+
+function buildAocConsent({ candidateUserId, recruiterUserId, operation, permissions }) {
+  return {
+    type: 'reference_access',
+    candidate_user_id: candidateUserId,
+    grantee_user_id: recruiterUserId,
+    operation,
+    permissions
+  };
+}
+
+function isAocCapabilityExpired(grant, currentTime = now()) {
+  if (!grant?.aoc_expires_at) return false;
+  return new Date(grant.aoc_expires_at).getTime() < currentTime.getTime();
+}
+
+export function getStoredCapabilityForGrant(grant) {
+  if (!grant || grant.status !== 'active') return null;
+  if (!grant.aoc_capability) return null;
+  if (isAocCapabilityExpired(grant)) return null;
+  return {
+    capability: grant.aoc_capability,
+    capability_hash: grant.aoc_capability_hash || null,
+    parent_consent_hash: grant.aoc_parent_consent_hash || null,
+    expires_at: grant.aoc_expires_at || null
+  };
+}
+
+export async function getStoredCapabilityForRecruiterAccess({ candidateUserId, recruiterUserId }) {
+  const grant = await fetchGrantRecord(candidateUserId, recruiterUserId);
+  if (!grant) return null;
+  return getStoredCapabilityForGrant(grant);
 }
 
 function now() {
@@ -216,25 +258,30 @@ export async function grantReferenceAccess({
     throw error;
   }
 
-  const aocDecision = await authorizeAocExecution({
+  const requestedPermissions = ['share_profile'];
+  const requestedScope = buildAocScope({
+    candidateUserId,
     operation: HrkOperations.SHARE_PROFILE,
-    requestedScope: [
-      `candidate.${candidateUserId}`,
-      'profile.share'
-    ],
-    requestedPermissions: ['share_profile'],
+    resourceRef: candidateUserId
+  });
+  const issuedAt = now().toISOString();
+  const mintedCapability = await mintAocCapability({
+    consent: buildAocConsent({
+      candidateUserId,
+      recruiterUserId,
+      operation: HrkOperations.SHARE_PROFILE,
+      permissions: requestedPermissions
+    }),
+    requestedScope,
+    requestedPermissions,
+    issuedAt,
+    expiresAt: normalizedExpiresAt,
     subjectDid: toDid(candidateUserId),
     granteeDid: toDid(recruiterUserId),
+    resourceType: 'candidate',
     resourceRef: candidateUserId,
     req
   });
-
-  if (!aocDecision.authorized) {
-    const error = new Error(`AOC authorization rejected: ${aocDecision.reason_code || 'UNKNOWN_REASON'}`);
-    error.status = 403;
-    error.reason_code = aocDecision.reason_code || 'AOC_DENIED';
-    throw error;
-  }
 
   // MVP design: one mutable current-grant row per candidate/recruiter pair.
   // Lifecycle transitions update the same row instead of writing historical grant rows.
@@ -251,6 +298,13 @@ export async function grantReferenceAccess({
       revoked_at: null,
       granted_by: grantedByUserId,
       metadata: activeMetadata,
+      aoc_capability_hash: mintedCapability.capability_hash || null,
+      aoc_parent_consent_hash: mintedCapability.parent_consent_hash || null,
+      aoc_capability: mintedCapability.capability || null,
+      aoc_requested_scope: requestedScope,
+      aoc_requested_permissions: requestedPermissions,
+      aoc_issued_at: issuedAt,
+      aoc_expires_at: mintedCapability.expires_at || normalizedExpiresAt,
       updated_at: grantedAt
     });
   } else {
@@ -265,6 +319,13 @@ export async function grantReferenceAccess({
         revoked_at: null,
         granted_by: grantedByUserId,
         metadata: activeMetadata,
+        aoc_capability_hash: mintedCapability.capability_hash || null,
+        aoc_parent_consent_hash: mintedCapability.parent_consent_hash || null,
+        aoc_capability: mintedCapability.capability || null,
+        aoc_requested_scope: requestedScope,
+        aoc_requested_permissions: requestedPermissions,
+        aoc_issued_at: issuedAt,
+        aoc_expires_at: mintedCapability.expires_at || normalizedExpiresAt,
         created_at: grantedAt,
         updated_at: grantedAt
       }])
@@ -288,7 +349,8 @@ export async function grantReferenceAccess({
       recruiterUserId,
       expiresAt: normalizedExpiresAt,
       eventType: 'reference_access_granted',
-      aocReasonCode: aocDecision.reason_code || null
+      aocCapabilityHash: mintedCapability.capability_hash || null,
+      aocCapabilitySource: mintedCapability.source || null
     },
     req
   });
@@ -328,6 +390,30 @@ export async function createReferenceCapabilityGrant({
     }
   }
 
+  const requestedPermissions = Array.isArray(allowedActions) ? allowedActions : [CapabilityActions.READ_REFERENCES, CapabilityActions.READ_REFERENCE_PACK];
+  const requestedScope = buildAocScope({
+    candidateUserId,
+    operation: HrkOperations.READ_REFERENCE,
+    resourceRef: candidateUserId
+  });
+  const mintedCapability = await mintAocCapability({
+    consent: buildAocConsent({
+      candidateUserId,
+      recruiterUserId: resolvedRecipientId,
+      operation: HrkOperations.READ_REFERENCE,
+      permissions: requestedPermissions
+    }),
+    requestedScope,
+    requestedPermissions,
+    issuedAt: now().toISOString(),
+    expiresAt,
+    subjectDid: toDid(candidateUserId),
+    granteeDid: toDid(resolvedRecipientId || 'public-link'),
+    resourceType: 'candidate',
+    resourceRef: candidateUserId,
+    req
+  });
+
   return issueCapabilityGrant({
     candidateUserId,
     ownerUserId: candidateUserId,
@@ -338,6 +424,9 @@ export async function createReferenceCapabilityGrant({
     allowedActions,
     expiresAt,
     metadata,
+    aocCapabilityRecord: mintedCapability,
+    aocRequestedScope: requestedScope,
+    aocRequestedPermissions: requestedPermissions,
     req
   });
 }
@@ -496,6 +585,29 @@ export async function assertRecruiterCanAccessReferencePack({
 
     const error = new Error('Explicit reference access is required');
     error.status = 403;
+    throw error;
+  }
+
+
+  const enforceAoc = process.env.AOC_ENFORCE === 'true';
+  const storedCapability = getStoredCapabilityForGrant(status.grant);
+  if (enforceAoc && !storedCapability) {
+    await recordAccessDecision({
+      actorUserId: recruiterUserId,
+      actorCompanyId: recruiterStatus.signer?.company_id || null,
+      action: 'read',
+      targetType: 'reference_pack',
+      targetId,
+      targetOwnerId: candidateUserId,
+      result: 'denied',
+      reason: AccessDecisionReasons.CONSENT_NOT_ACTIVE,
+      metadata: { eventType: 'reference_access_denied', recruiterUserId, reason_code: 'AOC_CAPABILITY_MISSING_OR_EXPIRED' },
+      req
+    });
+
+    const error = new Error('A valid AOC capability is required');
+    error.status = 403;
+    error.reason_code = 'AOC_CAPABILITY_MISSING_OR_EXPIRED';
     throw error;
   }
 

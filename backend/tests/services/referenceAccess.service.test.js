@@ -237,6 +237,55 @@ describe('referenceAccess.service', () => {
     expect(grant.id).toBe('grant-7');
   });
 
+
+
+  test('enforce mode denies active grant without persisted AOC capability', async () => {
+    const previousEnforce = process.env.AOC_ENFORCE;
+    process.env.AOC_ENFORCE = 'true';
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
+      if (table === 'reference_pack_access_grants') {
+        return createBuilder({ data: { id: 'grant-8', status: 'active', candidate_user_id: 'candidate-1', recruiter_user_id: 'recruiter-1', expires_at: '2030-01-01T00:00:00.000Z', aoc_capability: null }, error: null });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    await expect(assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' }))
+      .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_MISSING_OR_EXPIRED' });
+
+    process.env.AOC_ENFORCE = previousEnforce;
+  });
+
+  test('enforce mode allows active grant with valid persisted AOC capability', async () => {
+    const previousEnforce = process.env.AOC_ENFORCE;
+    process.env.AOC_ENFORCE = 'true';
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
+      if (table === 'reference_pack_access_grants') {
+        return createBuilder({
+          data: {
+            id: 'grant-9',
+            status: 'active',
+            candidate_user_id: 'candidate-1',
+            recruiter_user_id: 'recruiter-1',
+            expires_at: '2030-01-01T00:00:00.000Z',
+            aoc_capability: { capability_hash: 'cap-123' },
+            aoc_expires_at: '2030-01-01T00:00:00.000Z'
+          },
+          error: null
+        });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const grant = await assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' });
+    expect(grant.id).toBe('grant-9');
+
+    process.env.AOC_ENFORCE = previousEnforce;
+  });
+
   test('getReferenceAccessStatus reports none when no grant exists', async () => {
     fromMock.mockImplementation((table) => {
       if (table === 'reference_pack_access_grants') return createBuilder({ data: null, error: null });
