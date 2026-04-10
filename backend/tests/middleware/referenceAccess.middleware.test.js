@@ -169,6 +169,28 @@ describe('reference access middleware', () => {
     expect(res.body.message).toBe('Reference access grant has expired');
   });
 
+  test('returns PAYMENT_REQUIRED payload when recruiter has insufficient AOCs', async () => {
+    const error = new Error('Necesitas AOCs para acceder a este perfil');
+    error.status = 402;
+    error.code = 'PAYMENT_REQUIRED';
+    error.reason_code = 'PAYMENT_REQUIRED';
+    assertRecruiterCanAccessReferencePackMock.mockRejectedValue(error);
+
+    const middleware = requireReferenceAccessPermission({
+      resolveSubject: async () => ({ candidateUserId: 'candidate-1' })
+    });
+    const req = { user: { id: 'recruiter-1', role: 'user' }, params: {}, path: '/test' };
+    const res = createRes();
+
+    await middleware(req, res, jest.fn());
+
+    expect(res.statusCode).toBe(402);
+    expect(res.body).toEqual({
+      code: 'PAYMENT_REQUIRED',
+      message: 'Necesitas AOCs para acceder a este perfil'
+    });
+  });
+
   test('allows recruiter with active explicit grant', async () => {
     assertRecruiterCanAccessReferencePackMock.mockResolvedValue({ id: 'grant-1', status: 'active' });
 

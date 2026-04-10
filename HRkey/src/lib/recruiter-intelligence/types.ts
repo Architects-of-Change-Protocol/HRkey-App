@@ -134,6 +134,13 @@ export type BenchmarkSummary = {
 
 export type OverallDashboardStatus = "loading" | "ready" | "partial" | "forbidden" | "empty";
 
+export type AocWalletState = {
+  balance: number;
+  accessPrice: number;
+  hasSufficientBalance: boolean;
+  currency: "AOC";
+};
+
 export type TalentIntelligenceDashboardData = {
   candidateId: string;
   roleDefinition: RoleDefinitionInput;
@@ -149,4 +156,5 @@ export type TalentIntelligenceDashboardData = {
   summaryText: string;
   topCaveats: string[];
   overallStatus: OverallDashboardStatus;
+  aocWallet: AocWalletState | null;
 };

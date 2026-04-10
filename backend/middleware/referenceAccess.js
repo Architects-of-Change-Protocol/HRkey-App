@@ -291,6 +291,13 @@ export function requireReferenceAccessPermission({
         return onError(error, req, res, next);
       }
 
+      if (error.code === 'PAYMENT_REQUIRED' || error.reason_code === 'PAYMENT_REQUIRED') {
+        return res.status(402).json({
+          code: 'PAYMENT_REQUIRED',
+          message: 'Necesitas AOCs para acceder a este perfil'
+        });
+      }
+
       return res.status(error.status || 403).json({
         error: error.status === 404 ? 'Not found' : 'Access denied',
         message: error.status && error.status < 500 ? error.message : 'Authorization failed',

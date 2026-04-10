@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiClientError, apiGet } from "@/lib/apiClient";
 import { buildBenchmarkSummary, buildSummaryText, collectTopCaveats, hasSelectedRoleDefinition } from "./helpers";
 import type {
+  AocWalletState,
   CandidateReferencesResponse,
   OverallDashboardStatus,
   PerformancePredictionResponse,
@@ -92,6 +93,7 @@ export function useTalentIntelligenceDashboard(candidateId: string, roleDefiniti
     summaryText: "",
     topCaveats: [],
     overallStatus: "loading",
+    aocWallet: null
   });
 
   const roleDefinitionQuery = useMemo(() => ({ roleDefinition: JSON.stringify(roleDefinition || {}) }), [roleDefinition]);
@@ -110,6 +112,24 @@ export function useTalentIntelligenceDashboard(candidateId: string, roleDefiniti
         fetchSection<ReputationPropagationResponse>(`/api/reputation-propagation/candidate/${candidateId}`),
         fetchSection<CandidateReferencesResponse>(`/api/references/candidate/${candidateId}`),
       ]);
+
+      let aocWallet: AocWalletState | null = null;
+      try {
+        const walletResponse = await apiGet<{ ok: boolean; balance: number; accessPrice: number; hasSufficientBalance: boolean; currency: "AOC" }>(
+          "/api/aoc/balance",
+          { query: { candidateId } }
+        );
+        if (walletResponse?.ok) {
+          aocWallet = {
+            balance: Number(walletResponse.balance || 0),
+            accessPrice: Number(walletResponse.accessPrice || 0),
+            hasSufficientBalance: Boolean(walletResponse.hasSufficientBalance),
+            currency: "AOC"
+          };
+        }
+      } catch (_error) {
+        aocWallet = null;
+      }
 
       let referenceQuality: SectionState<ReferenceQualityResponse[]> = { status: "empty", data: [], error: null };
       if (references.status === "success") {
@@ -155,6 +175,7 @@ export function useTalentIntelligenceDashboard(candidateId: string, roleDefiniti
         summaryText,
         topCaveats,
         overallStatus,
+        aocWallet
       });
     }
 
