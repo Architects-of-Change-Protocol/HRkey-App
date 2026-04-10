@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import logger from '../logger.js';
 import { recordAccessDecision } from './accessDecisionAudit.service.js';
 import { AccessDecisionReasons } from './accessDecisionReasons.js';
+import { validateStoredAocCapability } from './aocRuntime.service.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://example.supabase.co';
 const SUPABASE_SERVICE_KEY =
@@ -159,10 +160,11 @@ async function persistGrantUpdate(id, fields) {
   return data;
 }
 
-function buildCapabilityError(message, reason, status = 403) {
+function buildCapabilityError(message, reason, status = 403, reasonCode = null) {
   const error = new Error(message);
   error.status = status;
   error.reason = reason;
+  error.reason_code = reasonCode;
   return error;
 }
 
@@ -475,13 +477,46 @@ export async function validateCapabilityToken({
     throw buildCapabilityError('Access denied', AccessDecisionReasons.SCOPE_MISMATCH);
   }
 
+  // Compatibility mode: legacy capability token is transport/pointer only.
+  // Source-of-truth authorization readiness comes from persisted AOC capability.
+  const aocValidation = await validateStoredAocCapability({
+    capabilityRecord: grant,
+    grant,
+    subjectDid: grant?.candidate_user_id ? `did:hrkey:user:${grant.candidate_user_id}` : null,
+    granteeDid: grant?.grantee_id ? `did:hrkey:user:${grant.grantee_id}` : null,
+    requestedPermissions: [normalizedAction],
+    req
+  });
+
+  if (!aocValidation.isValid) {
+    const reasonCode = aocValidation.reason_code || 'AOC_CAPABILITY_INVALID';
+    await recordCapabilityDecision({
+      grant,
+      req,
+      result: 'denied',
+      reason: AccessDecisionReasons.CONSENT_NOT_ACTIVE,
+      action: normalizedAction,
+      metadata: {
+        tokenPrefix: parsed.tokenPrefix,
+        reason_code: reasonCode,
+        source_of_truth: 'aoc_capability',
+        legacy_token_transport_only: true
+      }
+    });
+    throw buildCapabilityError('Access denied', AccessDecisionReasons.CONSENT_NOT_ACTIVE, 403, reasonCode);
+  }
+
   await recordCapabilityDecision({
     grant,
     req,
     result: 'allowed',
     reason: AccessDecisionReasons.ALLOW,
     action: normalizedAction,
-    metadata: { tokenPrefix: parsed.tokenPrefix }
+    metadata: {
+      tokenPrefix: parsed.tokenPrefix,
+      source_of_truth: 'aoc_capability',
+      legacy_token_transport_only: true
+    }
   });
 
   return {
