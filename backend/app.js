@@ -76,6 +76,7 @@ const candidateBenchmarkController = lazyController(() => import('./controllers/
 const louAgentController = lazyController(() => import('./controllers/louAgent.controller.js'));
 const cvController = lazyController(() => import('./controllers/cv.controller.js'));
 const aocEconomyController = lazyController(() => import('./controllers/aocEconomy.controller.js'));
+const rlusdConversionController = lazyController(() => import('./controllers/rlusdConversion.controller.js'));
 
 const loadHrkeyScoreService = lazyModule(() => import('./hrkeyScoreService.js'));
 const loadScoreSnapshots = lazyModule(() => import('./services/hrscore/scoreSnapshots.js'));
@@ -1330,6 +1331,9 @@ app.get('/api/aoc/balance', requireAuth, aocEconomyController.getMyAocBalance);
 app.post('/api/aoc/topup', requireAuth, aocEconomyController.topupMyAocBalance);
 app.get('/api/aoc/transactions', requireAuth, aocEconomyController.getMyAocTransactions);
 app.get('/api/aoc/earnings-summary', requireAuth, aocEconomyController.getMyAocEarningsSummary);
+app.post('/api/aoc/convert/quote', requireAuth, rlusdConversionController.postRlusdQuote);
+app.post('/api/aoc/convert/requests', requireAuth, rlusdConversionController.postConversionRequest);
+app.get('/api/aoc/convert/requests', requireAuth, rlusdConversionController.getConversionRequests);
 
 /**
  * GET /api/reference-pack/:identifier

@@ -4,6 +4,7 @@ type SupabaseResponse = { data: unknown; error: null | { message: string; code?:
 type TableResponses = {
   selectResponses?: SupabaseResponse[];
   insertResponses?: SupabaseResponse[];
+  upsertResponses?: SupabaseResponse[];
   updateResponses?: SupabaseResponse[];
   deleteResponses?: SupabaseResponse[];
   singleResponses?: SupabaseResponse[];
@@ -26,6 +27,10 @@ const createTableMock = (responses: TableResponses = {}) => {
       currentAction = 'insertResponses';
       return api;
     }),
+    upsert: jest.fn(() => {
+      currentAction = 'upsertResponses';
+      return api;
+    }),
     update: jest.fn(() => {
       currentAction = 'updateResponses';
       return api;
@@ -36,6 +41,7 @@ const createTableMock = (responses: TableResponses = {}) => {
     }),
     eq: jest.fn(() => api),
     order: jest.fn(() => api),
+    limit: jest.fn(() => api),
     single: jest.fn(async () => dequeue(responses.singleResponses)),
     maybeSingle: jest.fn(async () => dequeue(responses.maybeSingleResponses)),
     then: (resolve: (value: SupabaseResponse) => void, reject: (reason?: unknown) => void) =>
