@@ -12,6 +12,7 @@ import RlusdConversionCard from "@/components/aoc-wallet/RlusdConversionCard";
 import type {
   AocEarningsSummary,
   AocTransaction,
+  AocConversionRequest,
 } from "@/components/aoc-wallet/types";
 
 type ReferenceAnswer = {
@@ -123,6 +124,7 @@ export default function CandidateEvaluationPage() {
   const [aocBalance, setAocBalance] = useState(0);
   const [aocTransactions, setAocTransactions] = useState<AocTransaction[]>([]);
   const [aocSummary, setAocSummary] = useState<AocEarningsSummary | null>(null);
+  const [conversionRequests, setConversionRequests] = useState<AocConversionRequest[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -215,6 +217,10 @@ export default function CandidateEvaluationPage() {
       | "wallet_viewed"
       | "earnings_viewed"
       | "rlusd_conversion_cta_clicked"
+      | "rlusd_quote_requested"
+      | "rlusd_conversion_requested"
+      | "rlusd_conversion_confirmed"
+      | "rlusd_conversion_failed"
   ) => {
     const payload = {
       event: eventName,
@@ -232,7 +238,7 @@ export default function CandidateEvaluationPage() {
   useEffect(() => {
     const loadWallet = async () => {
       try {
-        const [balanceResponse, transactionsResponse, summaryResponse] =
+        const [balanceResponse, transactionsResponse, summaryResponse, conversionsResponse] =
           await Promise.all([
             apiGet<{
               ok: boolean;
@@ -246,16 +252,22 @@ export default function CandidateEvaluationPage() {
               ok: boolean;
               summary: AocEarningsSummary;
             }>("/api/aoc/earnings-summary"),
+            apiGet<{
+              ok: boolean;
+              requests: AocConversionRequest[];
+            }>("/api/aoc/convert/requests"),
           ]);
 
         setAocBalance(Number(balanceResponse?.balance || 0));
         setAocTransactions(transactionsResponse?.transactions || []);
         setAocSummary(summaryResponse?.summary || null);
+        setConversionRequests(conversionsResponse?.requests || []);
       } catch (err) {
         console.error("Unable to load AOC wallet data", err);
         setAocBalance(0);
         setAocTransactions([]);
         setAocSummary(null);
+        setConversionRequests([]);
       }
     };
 
@@ -536,9 +548,19 @@ export default function CandidateEvaluationPage() {
               />
             </div>
             <RlusdConversionCard
+              balance={aocBalance}
+              requests={conversionRequests}
+              onRequestCreated={({ request, balanceAfterDebit }) => {
+                setAocBalance(balanceAfterDebit);
+                setConversionRequests((current) => [request, ...current.filter((row) => row.id !== request.id)]);
+                trackWalletEvent("rlusd_conversion_confirmed");
+              }}
               onIntent={() => {
                 trackWalletEvent("rlusd_conversion_cta_clicked");
               }}
+              onQuoteRequested={() => trackWalletEvent("rlusd_quote_requested")}
+              onConversionRequested={() => trackWalletEvent("rlusd_conversion_requested")}
+              onConversionFailed={() => trackWalletEvent("rlusd_conversion_failed")}
             />
           </div>
 
