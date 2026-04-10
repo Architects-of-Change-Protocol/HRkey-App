@@ -129,6 +129,15 @@ function TalentIntelligenceSummaryCard({ data }: Props) {
           ))}
         </div>
       </div>
+      {data.aocWallet && (
+        <div className="mt-5 rounded-2xl border border-indigo-300/40 bg-indigo-500/10 p-4 text-sm text-indigo-100">
+          <p><strong>Tu balance:</strong> {data.aocWallet.balance} {data.aocWallet.currency}s</p>
+          <p><strong>Costo de acceso:</strong> {data.aocWallet.accessPrice} {data.aocWallet.currency}s</p>
+          {!data.aocWallet.hasSufficientBalance && (
+            <p className="mt-2 font-semibold text-amber-200">No tienes suficientes AOCs</p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

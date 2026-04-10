@@ -75,6 +75,7 @@ const careerTrajectoryController = lazyController(() => import('./controllers/ca
 const candidateBenchmarkController = lazyController(() => import('./controllers/candidateBenchmark.controller.js'));
 const louAgentController = lazyController(() => import('./controllers/louAgent.controller.js'));
 const cvController = lazyController(() => import('./controllers/cv.controller.js'));
+const aocEconomyController = lazyController(() => import('./controllers/aocEconomy.controller.js'));
 
 const loadHrkeyScoreService = lazyModule(() => import('./hrkeyScoreService.js'));
 const loadScoreSnapshots = lazyModule(() => import('./services/hrscore/scoreSnapshots.js'));
@@ -1325,6 +1326,8 @@ app.post('/api/reference-access/capabilities', requireAuth, referenceAccessContr
 app.post('/api/reference-access/capabilities/:grantId/revoke', requireAuth, referenceAccessController.revokeCapabilityGrantById);
 app.get('/api/reference-access/capabilities', requireAuth, referenceAccessController.listMyCapabilityGrants);
 app.get('/api/reference-access/history', requireAuth, referenceAccessController.getMyAccessHistory);
+app.get('/api/aoc/balance', requireAuth, aocEconomyController.getMyAocBalance);
+app.post('/api/aoc/topup', requireAuth, aocEconomyController.topupMyAocBalance);
 
 /**
  * GET /api/reference-pack/:identifier

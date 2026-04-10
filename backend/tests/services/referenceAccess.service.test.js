@@ -7,6 +7,11 @@ process.env.NODE_ENV = 'test';
 const fromMock = jest.fn();
 const mockSupabaseClient = { from: fromMock };
 const recordAccessDecisionMock = jest.fn().mockResolvedValue({ success: true });
+const processAccessPaymentMock = jest.fn().mockResolvedValue({
+  price: { amount: 10, currency: 'AOC' },
+  distribution: { candidateAmount: 8, platformFee: 2 },
+  transactions: [{ id: 'tx-candidate' }, { id: 'tx-platform' }]
+});
 
 jest.unstable_mockModule('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => mockSupabaseClient)
@@ -14,6 +19,12 @@ jest.unstable_mockModule('@supabase/supabase-js', () => ({
 
 jest.unstable_mockModule('../../services/accessDecisionAudit.service.js', () => ({
   recordAccessDecision: recordAccessDecisionMock
+}));
+
+jest.unstable_mockModule('../../services/aocPayment.service.js', () => ({
+  getAccessPrice: jest.fn().mockResolvedValue({ amount: 10, currency: 'AOC' }),
+  getUserBalance: jest.fn().mockResolvedValue({ user_id: 'recruiter-1', aoc_balance: 100 }),
+  processAccessPayment: processAccessPaymentMock
 }));
 
 const {

@@ -12,6 +12,7 @@ import {
   CapabilityResourceTypes
 } from './capabilityToken.service.js';
 import { HrkOperations, mintAocCapability, validateStoredAocCapability } from './aocRuntime.service.js';
+import { processAccessPayment } from './aocPayment.service.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://example.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key';
@@ -640,6 +641,37 @@ export async function assertRecruiterCanAccessReferencePack({
     const error = new Error('Explicit reference access is required');
     error.status = 403;
     throw error;
+  }
+
+  const hasSettledPayment = Boolean(status.grant?.metadata?.payment?.status === 'completed');
+  if (!hasSettledPayment) {
+    const paymentReferenceId = targetId || candidateUserId;
+    const payment = await processAccessPayment({
+      recruiterUserId,
+      candidateUserId,
+      referenceId: paymentReferenceId
+    });
+
+    const mergedMetadata = {
+      ...(status.grant?.metadata && typeof status.grant.metadata === 'object' ? status.grant.metadata : {}),
+      payment: {
+        status: 'completed',
+        paid_at: now().toISOString(),
+        reference_id: paymentReferenceId,
+        amount: payment.price.amount,
+        currency: payment.price.currency,
+        candidate_amount: payment.distribution.candidateAmount,
+        platform_fee: payment.distribution.platformFee,
+        transaction_ids: payment.transactions.map((tx) => tx.id)
+      }
+    };
+
+    const updatedGrant = await persistGrantUpdate(status.grant.id, {
+      metadata: mergedMetadata,
+      updated_at: now().toISOString()
+    });
+
+    status.grant = updatedGrant;
   }
 
 
