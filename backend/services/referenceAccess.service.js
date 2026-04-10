@@ -11,11 +11,18 @@ import {
   CapabilityActions,
   CapabilityResourceTypes
 } from './capabilityToken.service.js';
+import { authorizeAocExecution, HrkOperations } from './aocRuntime.service.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://example.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+function toDid(value) {
+  if (!value) return null;
+  if (typeof value === 'string' && value.startsWith('did:')) return value;
+  return `did:hrkey:user:${value}`;
+}
 
 function now() {
   return new Date();
@@ -209,6 +216,26 @@ export async function grantReferenceAccess({
     throw error;
   }
 
+  const aocDecision = await authorizeAocExecution({
+    operation: HrkOperations.SHARE_PROFILE,
+    requestedScope: [
+      `candidate.${candidateUserId}`,
+      'profile.share'
+    ],
+    requestedPermissions: ['share_profile'],
+    subjectDid: toDid(candidateUserId),
+    granteeDid: toDid(recruiterUserId),
+    resourceRef: candidateUserId,
+    req
+  });
+
+  if (!aocDecision.authorized) {
+    const error = new Error(`AOC authorization rejected: ${aocDecision.reason_code || 'UNKNOWN_REASON'}`);
+    error.status = 403;
+    error.reason_code = aocDecision.reason_code || 'AOC_DENIED';
+    throw error;
+  }
+
   // MVP design: one mutable current-grant row per candidate/recruiter pair.
   // Lifecycle transitions update the same row instead of writing historical grant rows.
   const existingGrant = await fetchGrantRecord(candidateUserId, recruiterUserId);
@@ -260,7 +287,8 @@ export async function grantReferenceAccess({
     metadata: {
       recruiterUserId,
       expiresAt: normalizedExpiresAt,
-      eventType: 'reference_access_granted'
+      eventType: 'reference_access_granted',
+      aocReasonCode: aocDecision.reason_code || null
     },
     req
   });

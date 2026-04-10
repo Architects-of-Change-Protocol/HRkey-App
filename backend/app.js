@@ -1178,6 +1178,7 @@ app.get(
   requireAuth,
   requireReferenceAccessPermission({
     capabilityAction: 'read_references',
+    aocOperation: 'read_reference',
     resolveSubject: async (req) => {
       const { data, error } = await getSupabase()
         .from('references')
@@ -1214,6 +1215,7 @@ app.get(
   requireAuth,
   requireReferenceAccessPermission({
     capabilityAction: 'read_references',
+    aocOperation: 'generate_insight',
     resolveSubject: async (req) => ({
       candidateUserId: req.params.candidateId
     }),
@@ -1235,6 +1237,7 @@ app.get(
   requireAuth,
   requireReferenceAccessPermission({
     capabilityAction: 'read_references',
+    aocOperation: 'generate_insight',
     resolveSubject: async (req) => ({
       candidateUserId: req.params.candidateId
     }),
@@ -1256,6 +1259,7 @@ app.get(
   requireAuth,
   requireReferenceAccessPermission({
     capabilityAction: 'read_references',
+    aocOperation: 'generate_insight',
     resolveSubject: async (req) => ({
       candidateUserId: req.params.candidateId
     }),
@@ -1277,6 +1281,7 @@ app.get(
   requireAuth,
   requireReferenceAccessPermission({
     capabilityAction: 'read_references',
+    aocOperation: 'generate_insight',
     resolveSubject: async (req) => ({
       candidateUserId: req.params.candidateId
     }),
@@ -1298,6 +1303,7 @@ app.get(
   optionalAuth,
   requireReferenceAccessPermission({
     capabilityAction: 'read_references',
+    aocOperation: 'read_reference',
     resolveSubject: async (req) => ({
       candidateUserId: req.params.candidateId
     }),
@@ -1327,6 +1333,7 @@ app.get('/api/reference-access/history', requireAuth, referenceAccessController.
  */
 app.get('/api/reference-pack/:identifier', optionalAuth, requireReferenceAccessPermission({
   capabilityAction: 'read_reference_pack',
+  aocOperation: 'read_candidate_data',
   resolveSubject: async (req) => {
     const { buildCanonicalReferencePack } = await loadReferencePack();
     const pack = await buildCanonicalReferencePack(req.params.identifier);
@@ -1360,6 +1367,7 @@ app.get('/api/reference-pack/:identifier', optionalAuth, requireReferenceAccessP
  * Anchors the canonical pack hash on Base Sepolia.
  */
 app.post('/api/reference-pack/:identifier/commit', requireAuth, requireReferenceAccessPermission({
+  aocOperation: 'write_reference',
   resolveSubject: async (req) => {
     const { buildCanonicalReferencePack } = await loadReferencePack();
     const pack = await buildCanonicalReferencePack(req.params.identifier);
