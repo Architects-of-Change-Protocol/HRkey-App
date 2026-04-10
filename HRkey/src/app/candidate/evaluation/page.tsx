@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { apiGet, apiPost } from "@/lib/apiClient";
+import ConsentAuthorizationModal from "@/components/consent/ConsentAuthorizationModal";
+import PermissionStatusCard from "@/components/consent/PermissionStatusCard";
 
 type ReferenceAnswer = {
   questionId: string;
@@ -94,6 +97,21 @@ export default function CandidateEvaluationPage() {
   const [publicIdentifier, setPublicIdentifier] = useState<string | null>(null);
   const [identifierError, setIdentifierError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
+  const [recruiterUserId, setRecruiterUserId] = useState("");
+  const [recruiterName, setRecruiterName] = useState("Recruiter");
+  const [companyName, setCompanyName] = useState("Empresa solicitante");
+  const [selectedDurationDays, setSelectedDurationDays] = useState(30);
+  const [isConsentOpen, setIsConsentOpen] = useState(false);
+  const [grantFeedback, setGrantFeedback] = useState<string | null>(null);
+  const [grants, setGrants] = useState<
+    Array<{
+      id: string;
+      recruiter_user_id: string;
+      status: "active" | "expired" | "revoked";
+      expires_at?: string | null;
+      metadata?: { permissions?: string[] } | null;
+    }>
+  >([]);
 
   useEffect(() => {
     const load = async () => {
@@ -159,6 +177,28 @@ export default function CandidateEvaluationPage() {
     load();
   }, []);
 
+  const loadPermissionGrants = async () => {
+    try {
+      const result = await apiGet<{
+        ok: boolean;
+        grants: Array<{
+          id: string;
+          recruiter_user_id: string;
+          status: "active" | "expired" | "revoked";
+          expires_at?: string | null;
+          metadata?: { permissions?: string[] } | null;
+        }>;
+      }>("/api/reference-access/grants");
+      setGrants(result.grants || []);
+    } catch (err) {
+      console.error("Unable to load permission grants", err);
+    }
+  };
+
+  useEffect(() => {
+    loadPermissionGrants();
+  }, []);
+
   const hrScore = evaluation?.scoring.hrScoreResult.hrScore ?? 0;
   const pricing = evaluation?.scoring.pricingResult.priceUsd ?? 10;
   const aggregated = evaluation?.scoring.referenceAnalysis.aggregatedSignals || {
@@ -191,6 +231,52 @@ export default function CandidateEvaluationPage() {
       console.error("Failed to copy link", err);
       setCopyState("idle");
     }
+  };
+
+  const trackConsentEvent = async (eventName: "consent_viewed" | "consent_approved" | "consent_rejected") => {
+    const payload = {
+      event: eventName,
+      context: "candidate_evaluation",
+      recruiterUserId: recruiterUserId || null,
+      durationDays: selectedDurationDays,
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      await apiPost("/api/analytics/events", payload);
+    } catch (error) {
+      console.info("Consent analytics fallback", payload, error);
+    }
+  };
+
+  const openConsentModal = async () => {
+    if (!recruiterUserId.trim()) {
+      setGrantFeedback("Ingresa primero el ID del reclutador para autorizar acceso.");
+      return;
+    }
+    setGrantFeedback(null);
+    setIsConsentOpen(true);
+    await trackConsentEvent("consent_viewed");
+  };
+
+  const handleApproveConsent = async () => {
+    const expiresAt = new Date(Date.now() + selectedDurationDays * 24 * 60 * 60 * 1000).toISOString();
+    await apiPost("/api/reference-access/grants", {
+      recruiterUserId: recruiterUserId.trim(),
+      expiresAt,
+      notes: `Autorización desde Wallet UX (${selectedDurationDays} días)`,
+    });
+
+    await trackConsentEvent("consent_approved");
+    setIsConsentOpen(false);
+    setGrantFeedback("Acceso autorizado correctamente.");
+    await loadPermissionGrants();
+  };
+
+  const handleRejectConsent = async () => {
+    await trackConsentEvent("consent_rejected");
+    setIsConsentOpen(false);
+    setGrantFeedback("No se otorgó acceso.");
   };
 
   const renderSignalBar = (label: string, value: number) => (
@@ -284,6 +370,86 @@ export default function CandidateEvaluationPage() {
             </div>
             {identifierError && (
               <p className="text-xs text-amber-700">{identifierError}</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Autorizar acceso a tu perfil</h2>
+              <span className="text-xs text-slate-500">Firma de permiso</span>
+            </div>
+            <p className="text-sm text-slate-600">
+              Estás dando acceso a tu información bajo condiciones específicas. Puedes revocarlo cuando quieras.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="text-sm text-slate-700">
+                ID del reclutador
+                <input
+                  value={recruiterUserId}
+                  onChange={(event) => setRecruiterUserId(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="uuid del reclutador"
+                />
+              </label>
+              <label className="text-sm text-slate-700">
+                Duración
+                <select
+                  value={selectedDurationDays}
+                  onChange={(event) => setSelectedDurationDays(Number(event.target.value))}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  <option value={7}>7 días</option>
+                  <option value={30}>30 días</option>
+                  <option value={90}>90 días</option>
+                </select>
+              </label>
+              <label className="text-sm text-slate-700">
+                Nombre del reclutador (opcional)
+                <input
+                  value={recruiterName}
+                  onChange={(event) => setRecruiterName(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm text-slate-700">
+                Empresa (opcional)
+                <input
+                  value={companyName}
+                  onChange={(event) => setCompanyName(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                />
+              </label>
+            </div>
+
+            <button
+              onClick={openConsentModal}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Dar acceso
+            </button>
+
+            {grantFeedback ? (
+              <p className="text-sm text-indigo-700">{grantFeedback}</p>
+            ) : null}
+          </div>
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4">
+            <h2 className="text-lg font-semibold">Estado de permisos</h2>
+            {grants.length === 0 ? (
+              <p className="text-sm text-slate-600">Todavía no tienes permisos activos o históricos.</p>
+            ) : (
+              <div className="space-y-3">
+                {grants.map((grant) => (
+                  <PermissionStatusCard
+                    key={grant.id}
+                    status={grant.status}
+                    expiresAt={grant.expires_at || null}
+                    permissions={grant.metadata?.permissions || ["read_references"]}
+                    recruiterUserId={grant.recruiter_user_id}
+                  />
+                ))}
+              </div>
             )}
           </div>
 
@@ -395,6 +561,21 @@ export default function CandidateEvaluationPage() {
           </div>
         </div>
       )}
+
+      <ConsentAuthorizationModal
+        isOpen={isConsentOpen}
+        recruiterName={recruiterName}
+        companyName={companyName}
+        dataTypes={["Referencias", "Insights"]}
+        permissions={["read_references", "generate_insight"]}
+        duration={`${selectedDurationDays} días`}
+        candidateName="Candidato HRKey"
+        profileSummary="Compartirás tu pack de referencias y señales agregadas con acceso controlado."
+        estimatedCostAOC={null}
+        onClose={() => setIsConsentOpen(false)}
+        onReject={handleRejectConsent}
+        onAuthorize={handleApproveConsent}
+      />
     </div>
   );
 }
