@@ -47,3 +47,18 @@ export type AocConversionRequest = {
   completed_at?: string | null;
   failure_reason?: string | null;
 };
+
+export type RlusdTransaction = {
+  id: string;
+  user_id: string;
+  amount: number;
+  direction: 'credit' | 'debit';
+  type:
+    | 'conversion_credit'
+    | 'withdrawal_hold'
+    | 'withdrawal_release'
+    | 'withdrawal_complete'
+    | 'adjustment';
+  reference_id?: string | null;
+  created_at: string;
+};

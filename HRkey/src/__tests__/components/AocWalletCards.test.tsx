@@ -68,13 +68,17 @@ describe('AOC wallet UI components', () => {
 
     render(
       <RlusdConversionCard
-        balance={120}
+        aocBalance={120}
+        rlusdBalance={0}
         requests={[]}
+        rlusdTransactions={[]}
         onIntent={jest.fn()}
         onQuoteRequested={jest.fn()}
         onConversionRequested={jest.fn()}
         onConversionFailed={jest.fn()}
         onRequestCreated={jest.fn()}
+        onRequestCancelled={jest.fn()}
+        onRlusdBalanceViewed={jest.fn()}
       />
     );
 
@@ -113,13 +117,17 @@ describe('AOC wallet UI components', () => {
 
     render(
       <RlusdConversionCard
-        balance={120}
+        aocBalance={120}
+        rlusdBalance={0}
         requests={[]}
+        rlusdTransactions={[]}
         onIntent={jest.fn()}
         onQuoteRequested={jest.fn()}
         onConversionRequested={jest.fn()}
         onConversionFailed={jest.fn()}
         onRequestCreated={onRequestCreated}
+        onRequestCancelled={jest.fn()}
+        onRlusdBalanceViewed={jest.fn()}
       />
     );
 
@@ -138,42 +146,128 @@ describe('AOC wallet UI components', () => {
   test('render de historial vacío', () => {
     render(
       <RlusdConversionCard
-        balance={50}
+        aocBalance={50}
+        rlusdBalance={0}
         requests={[]}
+        rlusdTransactions={[]}
         onIntent={jest.fn()}
         onQuoteRequested={jest.fn()}
         onConversionRequested={jest.fn()}
         onConversionFailed={jest.fn()}
         onRequestCreated={jest.fn()}
+        onRequestCancelled={jest.fn()}
+        onRlusdBalanceViewed={jest.fn()}
       />
     );
 
     expect(screen.getByText(/Todavía no tienes solicitudes de conversión/i)).toBeInTheDocument();
+    expect(screen.getByText(/Todavía no tienes movimientos RLUSD/i)).toBeInTheDocument();
   });
 
-  test('render de historial con requests', () => {
+  test('request completed aparece correctamente', () => {
     render(
       <RlusdConversionCard
-        balance={50}
+        aocBalance={50}
+        rlusdBalance={9.7}
         requests={[
           {
             id: 'req-1',
             source_amount: 80,
             net_target_amount: 7.76,
+            status: 'completed',
+            created_at: '2026-03-15T10:00:00.000Z',
+          } as any,
+        ]}
+        rlusdTransactions={[]}
+        onIntent={jest.fn()}
+        onQuoteRequested={jest.fn()}
+        onConversionRequested={jest.fn()}
+        onConversionFailed={jest.fn()}
+        onRequestCreated={jest.fn()}
+        onRequestCancelled={jest.fn()}
+        onRlusdBalanceViewed={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText(/80.00 AOC → 7.760000 RLUSD/i)).toBeInTheDocument();
+    expect(screen.getByText('completed')).toBeInTheDocument();
+    expect(screen.getByText(/acreditado a tu saldo RLUSD/i)).toBeInTheDocument();
+  });
+
+  test('cancelar request actualiza UI', async () => {
+    const onRequestCancelled = jest.fn();
+    mockApiPost.mockResolvedValueOnce({
+      ok: true,
+      request: {
+        id: 'req-2',
+        source_amount: 40,
+        net_target_amount: 3.88,
+        status: 'cancelled',
+        created_at: '2026-03-15T10:00:00.000Z',
+      },
+      balanceAfterRefund: 90
+    });
+
+    render(
+      <RlusdConversionCard
+        aocBalance={50}
+        rlusdBalance={0}
+        requests={[
+          {
+            id: 'req-2',
+            source_amount: 40,
+            net_target_amount: 3.88,
             status: 'pending',
             created_at: '2026-03-15T10:00:00.000Z',
           } as any,
+        ]}
+        rlusdTransactions={[]}
+        onIntent={jest.fn()}
+        onQuoteRequested={jest.fn()}
+        onConversionRequested={jest.fn()}
+        onConversionFailed={jest.fn()}
+        onRequestCreated={jest.fn()}
+        onRequestCancelled={onRequestCancelled}
+        onRlusdBalanceViewed={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Cancelar solicitud/i));
+    await waitFor(() => {
+      expect(onRequestCancelled).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/Solicitud cancelada/i)).toBeInTheDocument();
+    });
+  });
+
+  test('historial RLUSD con datos renderiza', () => {
+    render(
+      <RlusdConversionCard
+        aocBalance={50}
+        rlusdBalance={9.7}
+        requests={[]}
+        rlusdTransactions={[
+          {
+            id: 'rlusd-1',
+            user_id: 'candidate-1',
+            amount: 9.7,
+            direction: 'credit',
+            type: 'conversion_credit',
+            reference_id: 'req-1',
+            created_at: '2026-03-20T10:00:00.000Z'
+          },
         ]}
         onIntent={jest.fn()}
         onQuoteRequested={jest.fn()}
         onConversionRequested={jest.fn()}
         onConversionFailed={jest.fn()}
         onRequestCreated={jest.fn()}
+        onRequestCancelled={jest.fn()}
+        onRlusdBalanceViewed={jest.fn()}
       />
     );
 
-    expect(screen.getByText(/80.00 AOC → 7.760000 RLUSD/i)).toBeInTheDocument();
-    expect(screen.getByText('pending')).toBeInTheDocument();
+    expect(screen.getByText(/Recibiste 9.700000 RLUSD por conversión/i)).toBeInTheDocument();
+    expect(screen.getByText(/Referencia: req-1/i)).toBeInTheDocument();
   });
 
   test('no rompe con estado vacío de transacciones', () => {

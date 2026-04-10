@@ -1,5 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { logEvent } from './analytics/eventTracker.js';
+import {
+  cancelConversionRequest as cancelConversionRequestInLedger,
+  completeConversionRequest as completeConversionRequestInLedger,
+  failConversionRequest as failConversionRequestInLedger
+} from './rlusdLedger.service.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://example.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key';
@@ -260,28 +265,15 @@ export async function processPendingConversionRequest({ conversionRequestId, sta
 }
 
 export async function cancelConversionRequest({ userId, conversionRequestId }) {
-  const current = await getConversionRequestById({ userId, conversionRequestId });
-  if (!current) {
-    const error = new Error('Conversion request not found');
-    error.status = 404;
-    throw error;
-  }
+  return cancelConversionRequestInLedger({ userId, conversionRequestId });
+}
 
-  if (current.status !== 'pending') {
-    const error = new Error('Solo puedes cancelar solicitudes pendientes');
-    error.status = 409;
-    error.code = 'INVALID_STATUS_TRANSITION';
-    throw error;
-  }
+export async function completeConversionRequest({ conversionRequestId }) {
+  return completeConversionRequestInLedger({ conversionRequestId });
+}
 
-  const balance = await getUserBalance(userId);
-  await upsertBalance(userId, balance.aoc_balance + Number(current.source_amount));
-
-  return processPendingConversionRequest({
-    conversionRequestId,
-    status: 'cancelled',
-    failureReason: null
-  });
+export async function failConversionRequest({ conversionRequestId, failureReason = null }) {
+  return failConversionRequestInLedger({ conversionRequestId, failureReason });
 }
 
 export default {
@@ -290,5 +282,7 @@ export default {
   listConversionRequests,
   getConversionRequestById,
   processPendingConversionRequest,
-  cancelConversionRequest
+  cancelConversionRequest,
+  completeConversionRequest,
+  failConversionRequest
 };
