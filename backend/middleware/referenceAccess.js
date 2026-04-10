@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import logger from '../logger.js';
 import { assertRecruiterCanAccessReferencePack } from '../services/referenceAccess.service.js';
+import { authorizeAocExecution, mapLegacyActionToOperation } from '../services/aocRuntime.service.js';
 import {
   extractCapabilityToken,
   validateCapabilityToken,
@@ -38,6 +39,41 @@ function getSupabaseClient() {
   }
 
   return supabaseClient;
+}
+
+
+function toDid(value) {
+  if (!value) return null;
+  if (typeof value === 'string' && value.startsWith('did:')) return value;
+  return `did:hrkey:user:${value}`;
+}
+
+async function enforceAocAuthorization({ req, subject, capabilityAction, requesterUserId, aocOperation = null }) {
+  const operation = aocOperation || mapLegacyActionToOperation(capabilityAction);
+  const decision = await authorizeAocExecution({
+    operation,
+    requestedScope: [
+      `candidate.${subject.candidateUserId}`,
+      `operation.${operation}`
+    ],
+    requestedPermissions: [capabilityAction || 'read_references'],
+    subjectDid: toDid(subject.candidateUserId),
+    granteeDid: toDid(requesterUserId || 'anonymous'),
+    resourceRef: subject.targetId || subject.candidateUserId,
+    req
+  });
+
+  if (!decision.authorized) {
+    const error = new Error(`AOC authorization rejected: ${decision.reason_code || 'UNKNOWN_REASON'}`);
+    error.status = 403;
+    error.reason_code = decision.reason_code || 'AOC_DENIED';
+    throw error;
+  }
+
+  req.referenceAccess = {
+    ...(req.referenceAccess || {}),
+    aocDecision: decision
+  };
 }
 
 async function defaultDataAccessRequestResolver(req) {
@@ -97,7 +133,8 @@ export function requireReferenceAccessPermission({
   onError = null,
   allowCapabilityToken = true,
   capabilityAction = CapabilityActions.READ_REFERENCES,
-  capabilityResourceType = CapabilityResourceTypes.CANDIDATE_REFERENCE_DATA
+  capabilityResourceType = CapabilityResourceTypes.CANDIDATE_REFERENCE_DATA,
+  aocOperation = null
 } = {}) {
   if (typeof resolveSubject !== 'function') {
     throw new Error('requireReferenceAccessPermission requires a resolveSubject function');
@@ -129,11 +166,25 @@ export function requireReferenceAccessPermission({
       }
 
       if (allowOwner && req.user?.id === candidateUserId) {
+        await enforceAocAuthorization({
+          req,
+          subject,
+          capabilityAction,
+          requesterUserId: req.user?.id,
+          aocOperation
+        });
         req.referenceAccess.accessLevel = 'owner';
         return next();
       }
 
       if (allowSuperadmin && req.user?.role === 'superadmin') {
+        await enforceAocAuthorization({
+          req,
+          subject,
+          capabilityAction,
+          requesterUserId: req.user?.id,
+          aocOperation
+        });
         req.referenceAccess.accessLevel = 'superadmin';
         return next();
       }
@@ -147,6 +198,14 @@ export function requireReferenceAccessPermission({
           resourceId: subject.capabilityResourceId || candidateUserId,
           candidateUserId,
           req
+        });
+
+        await enforceAocAuthorization({
+          req,
+          subject,
+          capabilityAction,
+          requesterUserId: validated?.grant?.grantee_id || req.user?.id || 'capability-grantee',
+          aocOperation
         });
 
         req.referenceAccess.accessLevel = 'capability_token';
@@ -166,6 +225,14 @@ export function requireReferenceAccessPermission({
         recruiterUserId: req.user.id,
         req,
         targetId: subject.targetId || null
+      });
+
+      await enforceAocAuthorization({
+        req,
+        subject,
+        capabilityAction,
+        requesterUserId: req.user?.id,
+        aocOperation
       });
 
       req.referenceAccess.accessLevel = 'explicit_grant';
@@ -188,7 +255,8 @@ export function requireReferenceAccessPermission({
 
       return res.status(error.status || 403).json({
         error: error.status === 404 ? 'Not found' : 'Access denied',
-        message: error.status && error.status < 500 ? error.message : 'Authorization failed'
+        message: error.status && error.status < 500 ? error.message : 'Authorization failed',
+        reason_code: error.reason_code || null
       });
     }
   };
