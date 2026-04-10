@@ -2,6 +2,7 @@ import logger from '../logger.js';
 
 const MARKET_MAKER_ID = 'hrkey';
 const DEFAULT_ADAPTER = 'hrkey';
+const DEFAULT_MOCK_CAPABILITY = 'mock-capability-hrkey';
 
 let hostedRuntimeCtor = null;
 let clientInstance = null;
@@ -42,14 +43,175 @@ async function getAocClient() {
   return clientInstance;
 }
 
+
+function shouldAllowTransitionalMock() {
+  const enforce = process.env.AOC_ENFORCE === 'true';
+  const explicit = process.env.AOC_ALLOW_MOCK_FALLBACK === 'true';
+  return !enforce || explicit;
+}
+
+function normalizeScopeEntry(entry) {
+  if (!entry) return null;
+  if (typeof entry === 'string' && entry.trim()) {
+    return { type: 'operation', ref: entry.trim() };
+  }
+  if (typeof entry === 'object') {
+    const type = typeof entry.type === 'string' ? entry.type.trim() : '';
+    const ref = typeof entry.ref === 'string' ? entry.ref.trim() : '';
+    if (type && ref) return { type, ref };
+  }
+  return null;
+}
+
 function normalizeRequestedScope(scope = []) {
   if (!Array.isArray(scope)) return [];
-  return scope.filter((item) => typeof item === 'string' && item.trim().length > 0);
+  return scope.map(normalizeScopeEntry).filter(Boolean);
 }
 
 function normalizeRequestedPermissions(permissions = []) {
   if (!Array.isArray(permissions)) return [];
   return permissions.filter((item) => typeof item === 'string' && item.trim().length > 0);
+}
+
+function extractCapabilityHash(capability) {
+  if (!capability || typeof capability !== 'object') return null;
+  return capability.capability_hash || capability.hash || capability.id || null;
+}
+
+function extractConsentHash(capability) {
+  if (!capability || typeof capability !== 'object') return null;
+  return capability.parent_consent_hash || capability.consent_hash || capability.consentId || null;
+}
+
+export async function mintAocCapability({
+  consent,
+  requestedScope = [],
+  requestedPermissions = [],
+  issuedAt = null,
+  expiresAt = null,
+  subjectDid,
+  granteeDid,
+  resourceType = 'candidate',
+  resourceRef,
+  req = null
+}) {
+  const shouldEnforce = process.env.AOC_ENFORCE === 'true';
+  const normalizedScope = normalizeRequestedScope(requestedScope);
+  const normalizedPermissions = normalizeRequestedPermissions(requestedPermissions);
+  const decisionLogBase = {
+    requestId: req?.requestId,
+    subjectDid,
+    granteeDid,
+    resourceRef,
+    requestedScope: normalizedScope,
+    requestedPermissions: normalizedPermissions
+  };
+
+  logger.info('AOC capability mint intent', decisionLogBase);
+
+  const client = await getAocClient();
+  if (!client) {
+    if (shouldAllowTransitionalMock()) {
+      const fallbackCapability = process.env.AOC_MOCK_CAPABILITY || DEFAULT_MOCK_CAPABILITY;
+      logger.warn('AOC capability mint fallback (client unavailable)', {
+        ...decisionLogBase,
+        reason_code: 'AOC_CLIENT_UNAVAILABLE'
+      });
+      return {
+        capability: fallbackCapability,
+        capability_hash: fallbackCapability,
+        parent_consent_hash: null,
+        expires_at: expiresAt || null,
+        isMock: true,
+        source: 'transitional_fallback'
+      };
+    }
+
+    const error = new Error('AOC capability mint failed: runtime client unavailable');
+    error.status = shouldEnforce ? 503 : 403;
+    error.reason_code = 'AOC_CLIENT_UNAVAILABLE';
+    throw error;
+  }
+
+  const payload = {
+    consent,
+    requested_scope: normalizedScope,
+    requested_permissions: normalizedPermissions,
+    issued_at: issuedAt || new Date().toISOString(),
+    expires_at: expiresAt || null,
+    marketMakerId: MARKET_MAKER_ID,
+    subject: subjectDid,
+    grantee: granteeDid,
+    resource: {
+      type: resourceType,
+      ref: resourceRef
+    }
+  };
+
+  try {
+    const minted = await client.mintCapability(payload);
+    const capabilityHash = extractCapabilityHash(minted);
+    const parentConsentHash = extractConsentHash(minted);
+
+    logger.info('AOC capability mint success', {
+      ...decisionLogBase,
+      capability_hash: capabilityHash,
+      parent_consent_hash: parentConsentHash
+    });
+
+    return {
+      capability: minted,
+      capability_hash: capabilityHash,
+      parent_consent_hash: parentConsentHash,
+      expires_at: minted?.expires_at || payload.expires_at || null,
+      isMock: false,
+      source: 'runtime'
+    };
+  } catch (error) {
+    logger.error('AOC capability mint failed', {
+      ...decisionLogBase,
+      error: error.message
+    });
+
+    if (shouldAllowTransitionalMock()) {
+      const fallbackCapability = process.env.AOC_MOCK_CAPABILITY || DEFAULT_MOCK_CAPABILITY;
+      return {
+        capability: fallbackCapability,
+        capability_hash: fallbackCapability,
+        parent_consent_hash: null,
+        expires_at: expiresAt || null,
+        isMock: true,
+        source: 'transitional_fallback'
+      };
+    }
+
+    const mintError = new Error(`AOC capability mint failed: ${error.message}`);
+    mintError.status = shouldEnforce ? 403 : 500;
+    mintError.reason_code = 'AOC_MINT_FAILED';
+    throw mintError;
+  }
+}
+
+function resolveAocCapabilityForRequest({ capability, req = null }) {
+  const storedCapability = req?.referenceAccess?.resolvedCapability || req?.referenceAccess?.grant?.aoc_capability || null;
+  const tokenCapability = capability || req?.headers?.['x-aoc-capability'] || null;
+
+  if (storedCapability) {
+    return { value: storedCapability, source: 'stored_capability' };
+  }
+
+  if (tokenCapability) {
+    return { value: tokenCapability, source: 'token_or_request_capability' };
+  }
+
+  if (shouldAllowTransitionalMock()) {
+    return {
+      value: process.env.AOC_MOCK_CAPABILITY || DEFAULT_MOCK_CAPABILITY,
+      source: 'mock_fallback'
+    };
+  }
+
+  return { value: null, source: 'missing' };
 }
 
 export const HrkOperations = Object.freeze({
@@ -130,7 +292,8 @@ export async function authorizeAocExecution({
     return fallbackDecision;
   }
 
-  const effectiveCapability = capability || req?.headers?.['x-aoc-capability'] || process.env.AOC_MOCK_CAPABILITY || 'mock-capability-hrkey';
+  const resolvedCapability = resolveAocCapabilityForRequest({ capability, req });
+  const effectiveCapability = resolvedCapability.value;
 
   if (!effectiveCapability) {
     const missingCapDecision = {
@@ -141,7 +304,8 @@ export async function authorizeAocExecution({
     logger.info('AOC authorization decision', {
       ...decisionLogBase,
       authorized: false,
-      reason_code: missingCapDecision.reason_code
+      reason_code: missingCapDecision.reason_code,
+      capability_source: resolvedCapability.source
     });
 
     return missingCapDecision;
@@ -170,13 +334,15 @@ export async function authorizeAocExecution({
     logger.info('AOC authorization decision', {
       ...decisionLogBase,
       authorized: Boolean(result?.authorized),
-      reason_code: result?.reason_code || null
+      reason_code: result?.reason_code || null,
+      capability_source: resolvedCapability.source
     });
 
     return {
       authorized: Boolean(result?.authorized),
       reason_code: result?.reason_code || null,
-      raw: result || null
+      raw: result || null,
+      capability_source: resolvedCapability.source
     };
   } catch (error) {
     logger.error('AOC authorizeExecution failed', {

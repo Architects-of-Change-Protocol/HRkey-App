@@ -9,6 +9,7 @@ const mockSupabaseClient = {
 };
 
 const assertRecruiterCanAccessReferencePackMock = jest.fn();
+const getStoredCapabilityForGrantMock = jest.fn(() => null);
 const validateCapabilityTokenMock = jest.fn();
 const extractCapabilityTokenMock = jest.fn();
 
@@ -17,7 +18,8 @@ jest.unstable_mockModule('@supabase/supabase-js', () => ({
 }));
 
 jest.unstable_mockModule('../../services/referenceAccess.service.js', () => ({
-  assertRecruiterCanAccessReferencePack: assertRecruiterCanAccessReferencePackMock
+  assertRecruiterCanAccessReferencePack: assertRecruiterCanAccessReferencePackMock,
+  getStoredCapabilityForGrant: getStoredCapabilityForGrantMock
 }));
 
 jest.unstable_mockModule('../../services/capabilityToken.service.js', () => ({
@@ -63,6 +65,7 @@ describe('reference access middleware', () => {
     jest.clearAllMocks();
     __setSupabaseClientForTests(mockSupabaseClient);
     extractCapabilityTokenMock.mockReturnValue(null);
+    getStoredCapabilityForGrantMock.mockReturnValue(null);
   });
 
   test('allows candidate owner access', async () => {

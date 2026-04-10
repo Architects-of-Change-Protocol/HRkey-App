@@ -197,6 +197,9 @@ export async function issueCapabilityGrant({
   allowedActions = [CapabilityActions.READ_REFERENCES, CapabilityActions.READ_REFERENCE_PACK],
   expiresAt = null,
   metadata = null,
+  aocCapabilityRecord = null,
+  aocRequestedScope = [],
+  aocRequestedPermissions = [],
   req = null
 }) {
   if (!candidateUserId || !ownerUserId) {
@@ -248,6 +251,12 @@ export async function issueCapabilityGrant({
     token_hint: tokenSecret.slice(0, 8),
     token_jti: tokenJti,
     metadata: metadata && typeof metadata === 'object' ? metadata : null,
+    aoc_capability_hash: aocCapabilityRecord?.capability_hash || null,
+    aoc_parent_consent_hash: aocCapabilityRecord?.parent_consent_hash || null,
+    aoc_capability: aocCapabilityRecord?.capability || null,
+    aoc_requested_scope: Array.isArray(aocRequestedScope) ? aocRequestedScope : [],
+    aoc_requested_permissions: Array.isArray(aocRequestedPermissions) ? aocRequestedPermissions : [],
+    aoc_expires_at: aocCapabilityRecord?.expires_at || normalizedExpiresAt,
     created_at: issuedAt,
     updated_at: issuedAt
   };
