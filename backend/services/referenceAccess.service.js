@@ -11,7 +11,7 @@ import {
   CapabilityActions,
   CapabilityResourceTypes
 } from './capabilityToken.service.js';
-import { HrkOperations, mintAocCapability } from './aocRuntime.service.js';
+import { HrkOperations, mintAocCapability, validateStoredAocCapability } from './aocRuntime.service.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://example.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-service-role-key';
@@ -51,7 +51,6 @@ function isAocCapabilityExpired(grant, currentTime = now()) {
 export function getStoredCapabilityForGrant(grant) {
   if (!grant || grant.status !== 'active') return null;
   if (!grant.aoc_capability) return null;
-  if (isAocCapabilityExpired(grant)) return null;
   return {
     capability: grant.aoc_capability,
     capability_hash: grant.aoc_capability_hash || null,
@@ -601,14 +600,51 @@ export async function assertRecruiterCanAccessReferencePack({
       targetOwnerId: candidateUserId,
       result: 'denied',
       reason: AccessDecisionReasons.CONSENT_NOT_ACTIVE,
-      metadata: { eventType: 'reference_access_denied', recruiterUserId, reason_code: 'AOC_CAPABILITY_MISSING_OR_EXPIRED' },
+      metadata: { eventType: 'reference_access_denied', recruiterUserId, reason_code: 'AOC_CAPABILITY_MISSING' },
       req
     });
 
     const error = new Error('A valid AOC capability is required');
     error.status = 403;
-    error.reason_code = 'AOC_CAPABILITY_MISSING_OR_EXPIRED';
+    error.reason_code = 'AOC_CAPABILITY_MISSING';
     throw error;
+  }
+
+  if (enforceAoc) {
+    const validation = await validateStoredAocCapability({
+      capabilityRecord: storedCapability,
+      grant: status.grant,
+      subjectDid: toDid(candidateUserId),
+      granteeDid: toDid(recruiterUserId),
+      requestedPermissions: [CapabilityActions.READ_REFERENCES],
+      req
+    });
+
+    if (!validation.isValid) {
+      const reasonCode = validation.reason_code || 'AOC_CAPABILITY_INVALID';
+      await recordAccessDecision({
+        actorUserId: recruiterUserId,
+        actorCompanyId: recruiterStatus.signer?.company_id || null,
+        action: 'read',
+        targetType: 'reference_pack',
+        targetId,
+        targetOwnerId: candidateUserId,
+        result: 'denied',
+        reason: AccessDecisionReasons.CONSENT_NOT_ACTIVE,
+        metadata: {
+          eventType: 'reference_access_denied',
+          recruiterUserId,
+          reason_code: reasonCode,
+          capability_validation_result: validation.validation_result || null
+        },
+        req
+      });
+
+      const error = new Error('Stored AOC capability is invalid');
+      error.status = 403;
+      error.reason_code = reasonCode;
+      throw error;
+    }
   }
 
   await recordAccessDecision({

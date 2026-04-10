@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import logger from '../logger.js';
-import { assertRecruiterCanAccessReferencePack, getStoredCapabilityForGrant } from '../services/referenceAccess.service.js';
-import { authorizeAocExecution, mapLegacyActionToOperation } from '../services/aocRuntime.service.js';
+import { assertRecruiterCanAccessReferencePack } from '../services/referenceAccess.service.js';
+import { authorizeAocExecution, mapLegacyActionToOperation, resolveUsableAocCapability } from '../services/aocRuntime.service.js';
 import {
   extractCapabilityToken,
   validateCapabilityToken,
@@ -51,24 +51,6 @@ function buildRequestedScope({ subject, operation }) {
   ];
 }
 
-function resolveAocCapabilityForRequest({ req, validatedCapability = null }) {
-  const grantCapability = getStoredCapabilityForGrant(req?.referenceAccess?.grant || null);
-  if (grantCapability?.capability) {
-    return { capability: grantCapability.capability, source: 'stored_grant_capability' };
-  }
-
-  if (validatedCapability?.grant?.aoc_capability) {
-    return { capability: validatedCapability.grant.aoc_capability, source: 'validated_token_grant_capability' };
-  }
-
-  const headerCapability = req?.headers?.['x-aoc-capability'] || null;
-  if (headerCapability) {
-    return { capability: headerCapability, source: 'header_capability' };
-  }
-
-  return { capability: null, source: 'none' };
-}
-
 function toDid(value) {
   if (!value) return null;
   if (typeof value === 'string' && value.startsWith('did:')) return value;
@@ -77,13 +59,25 @@ function toDid(value) {
 
 async function enforceAocAuthorization({ req, subject, capabilityAction, requesterUserId, aocOperation = null, capability = null }) {
   const operation = aocOperation || mapLegacyActionToOperation(capabilityAction);
+  const subjectDid = toDid(subject.candidateUserId);
+  const granteeDid = toDid(requesterUserId || 'anonymous');
+  const resolvedCapability = await resolveUsableAocCapability({
+    req,
+    inlineCapability: capability,
+    grant: req?.referenceAccess?.grant || null,
+    subjectDid,
+    granteeDid,
+    requestedPermissions: [capabilityAction || 'read_references']
+  });
+
   const decision = await authorizeAocExecution({
     operation,
     requestedScope: buildRequestedScope({ subject, operation }),
     requestedPermissions: [capabilityAction || 'read_references'],
-    capability,
-    subjectDid: toDid(subject.candidateUserId),
-    granteeDid: toDid(requesterUserId || 'anonymous'),
+    capability: resolvedCapability.capability,
+    capabilitySource: resolvedCapability.source,
+    subjectDid,
+    granteeDid,
     resourceRef: subject.targetId || subject.candidateUserId,
     req
   });
@@ -191,28 +185,26 @@ export function requireReferenceAccessPermission({
       }
 
       if (allowOwner && req.user?.id === candidateUserId) {
-        const resolvedCapability = resolveAocCapabilityForRequest({ req });
         await enforceAocAuthorization({
           req,
           subject,
           capabilityAction,
           requesterUserId: req.user?.id,
           aocOperation,
-          capability: resolvedCapability.capability
+          capability: req?.referenceAccess?.grant?.aoc_capability || null
         });
         req.referenceAccess.accessLevel = 'owner';
         return next();
       }
 
       if (allowSuperadmin && req.user?.role === 'superadmin') {
-        const resolvedCapability = resolveAocCapabilityForRequest({ req });
         await enforceAocAuthorization({
           req,
           subject,
           capabilityAction,
           requesterUserId: req.user?.id,
           aocOperation,
-          capability: resolvedCapability.capability
+          capability: req?.referenceAccess?.grant?.aoc_capability || null
         });
         req.referenceAccess.accessLevel = 'superadmin';
         return next();
@@ -229,14 +221,13 @@ export function requireReferenceAccessPermission({
           req
         });
 
-        const resolvedCapability = resolveAocCapabilityForRequest({ req, validatedCapability: validated });
         await enforceAocAuthorization({
           req,
           subject,
           capabilityAction,
           requesterUserId: validated?.grant?.grantee_id || req.user?.id || 'capability-grantee',
           aocOperation,
-          capability: resolvedCapability.capability
+          capability: validated?.grant?.aoc_capability || null
         });
 
         req.referenceAccess.accessLevel = 'capability_token';
@@ -259,8 +250,12 @@ export function requireReferenceAccessPermission({
       });
 
       req.referenceAccess.grant = grant;
-      const resolvedCapability = resolveAocCapabilityForRequest({ req });
-      req.referenceAccess.resolvedCapability = resolvedCapability.capability;
+      req.referenceAccess.resolvedCapability = {
+        capability: grant?.aoc_capability || null,
+        capability_hash: grant?.aoc_capability_hash || null,
+        parent_consent_hash: grant?.aoc_parent_consent_hash || null,
+        expires_at: grant?.aoc_expires_at || null
+      };
 
       await enforceAocAuthorization({
         req,
@@ -268,7 +263,7 @@ export function requireReferenceAccessPermission({
         capabilityAction,
         requesterUserId: req.user?.id,
         aocOperation,
-        capability: resolvedCapability.capability
+        capability: req.referenceAccess.resolvedCapability?.capability || null
       });
 
       req.referenceAccess.accessLevel = 'explicit_grant';
@@ -305,4 +300,3 @@ export function requireReferenceAccessForDataAccessRequest(options = {}) {
     ...options
   });
 }
-
