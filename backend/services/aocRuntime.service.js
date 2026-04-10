@@ -2,7 +2,6 @@ import logger from '../logger.js';
 
 const MARKET_MAKER_ID = 'hrkey';
 const DEFAULT_ADAPTER = 'hrkey';
-const DEFAULT_MOCK_CAPABILITY = 'mock-capability-hrkey';
 
 let hostedRuntimeCtor = null;
 let clientInstance = null;
@@ -43,11 +42,12 @@ async function getAocClient() {
   return clientInstance;
 }
 
+function isTruthyEnv(value) {
+  return String(value || '').toLowerCase() === 'true';
+}
 
-function shouldAllowTransitionalMock() {
-  const enforce = process.env.AOC_ENFORCE === 'true';
-  const explicit = process.env.AOC_ALLOW_MOCK_FALLBACK === 'true';
-  return !enforce || explicit;
+function shouldAllowHeaderCapability() {
+  return isTruthyEnv(process.env.AOC_ALLOW_HEADER_CAPABILITY);
 }
 
 function normalizeScopeEntry(entry) {
@@ -111,19 +111,18 @@ export async function mintAocCapability({
 
   const client = await getAocClient();
   if (!client) {
-    if (shouldAllowTransitionalMock()) {
-      const fallbackCapability = process.env.AOC_MOCK_CAPABILITY || DEFAULT_MOCK_CAPABILITY;
-      logger.warn('AOC capability mint fallback (client unavailable)', {
+    if (!shouldEnforce) {
+      logger.warn('AOC capability mint skipped (client unavailable, legacy mode)', {
         ...decisionLogBase,
         reason_code: 'AOC_CLIENT_UNAVAILABLE'
       });
       return {
-        capability: fallbackCapability,
-        capability_hash: fallbackCapability,
+        capability: null,
+        capability_hash: null,
         parent_consent_hash: null,
         expires_at: expiresAt || null,
-        isMock: true,
-        source: 'transitional_fallback'
+        isMock: false,
+        source: 'legacy_no_capability'
       };
     }
 
@@ -173,15 +172,14 @@ export async function mintAocCapability({
       error: error.message
     });
 
-    if (shouldAllowTransitionalMock()) {
-      const fallbackCapability = process.env.AOC_MOCK_CAPABILITY || DEFAULT_MOCK_CAPABILITY;
+    if (!shouldEnforce) {
       return {
-        capability: fallbackCapability,
-        capability_hash: fallbackCapability,
+        capability: null,
+        capability_hash: null,
         parent_consent_hash: null,
         expires_at: expiresAt || null,
-        isMock: true,
-        source: 'transitional_fallback'
+        isMock: false,
+        source: 'legacy_no_capability'
       };
     }
 
@@ -192,26 +190,205 @@ export async function mintAocCapability({
   }
 }
 
-function resolveAocCapabilityForRequest({ capability, req = null }) {
-  const storedCapability = req?.referenceAccess?.resolvedCapability || req?.referenceAccess?.grant?.aoc_capability || null;
-  const tokenCapability = capability || req?.headers?.['x-aoc-capability'] || null;
+function normalizeCapabilityPayload(capability) {
+  if (!capability) return null;
+  if (typeof capability === 'object') return capability;
+  if (typeof capability === 'string') {
+    const trimmed = capability.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('{')) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (_error) {
+        return null;
+      }
+    }
+  }
+  return null;
+}
 
-  if (storedCapability) {
-    return { value: storedCapability, source: 'stored_capability' };
+function extractCapabilitySubject(capability) {
+  return capability?.subject || capability?.sub || capability?.candidate_did || null;
+}
+
+function extractCapabilityGrantee(capability) {
+  return capability?.grantee || capability?.aud || capability?.recruiter_did || null;
+}
+
+function extractCapabilityPermissions(capability) {
+  if (Array.isArray(capability?.requested_permissions)) return capability.requested_permissions;
+  if (Array.isArray(capability?.permissions)) return capability.permissions;
+  return [];
+}
+
+function isIsoExpired(value) {
+  if (!value) return false;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return true;
+  return parsed.getTime() <= Date.now();
+}
+
+export async function validateStoredAocCapability({
+  capabilityRecord = null,
+  grant = null,
+  subjectDid = null,
+  granteeDid = null,
+  requestedPermissions = [],
+  req = null
+}) {
+  const capabilityPayload = normalizeCapabilityPayload(capabilityRecord?.capability || capabilityRecord?.aoc_capability || capabilityRecord);
+  if (!capabilityPayload) {
+    return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'shape_invalid' };
   }
 
-  if (tokenCapability) {
-    return { value: tokenCapability, source: 'token_or_request_capability' };
+  const capabilityHash = capabilityRecord?.capability_hash || capabilityRecord?.aoc_capability_hash || extractCapabilityHash(capabilityPayload);
+  if (!capabilityHash) {
+    return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'capability_hash_missing' };
   }
 
-  if (shouldAllowTransitionalMock()) {
+  const parentConsentHash = capabilityRecord?.parent_consent_hash || capabilityRecord?.aoc_parent_consent_hash || extractConsentHash(capabilityPayload) || null;
+  if (parentConsentHash !== null && typeof parentConsentHash !== 'string') {
+    return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'parent_consent_hash_invalid' };
+  }
+
+  const expiresAt = capabilityRecord?.expires_at || capabilityRecord?.aoc_expires_at || capabilityPayload?.expires_at || null;
+  if (isIsoExpired(expiresAt)) {
+    return { isValid: false, reason_code: 'AOC_CAPABILITY_EXPIRED', validation_result: 'expired' };
+  }
+
+  if (subjectDid && extractCapabilitySubject(capabilityPayload) && extractCapabilitySubject(capabilityPayload) !== subjectDid) {
+    return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'subject_mismatch' };
+  }
+
+  if (granteeDid && extractCapabilityGrantee(capabilityPayload) && extractCapabilityGrantee(capabilityPayload) !== granteeDid) {
+    return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'grantee_mismatch' };
+  }
+
+  if (grant?.candidate_user_id && extractCapabilitySubject(capabilityPayload)) {
+    const expectedSubjectDid = `did:hrkey:user:${grant.candidate_user_id}`;
+    if (extractCapabilitySubject(capabilityPayload) !== expectedSubjectDid) {
+      return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'grant_subject_mismatch' };
+    }
+  }
+
+  if (grant?.recruiter_user_id && extractCapabilityGrantee(capabilityPayload)) {
+    const expectedGranteeDid = `did:hrkey:user:${grant.recruiter_user_id}`;
+    if (extractCapabilityGrantee(capabilityPayload) !== expectedGranteeDid) {
+      return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'grant_grantee_mismatch' };
+    }
+  }
+
+  const capabilityPermissions = extractCapabilityPermissions(capabilityPayload);
+  if (Array.isArray(requestedPermissions) && requestedPermissions.length > 0) {
+    const hasAllRequested = requestedPermissions.every((permission) => capabilityPermissions.includes(permission));
+    if (!hasAllRequested) {
+      return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'permissions_mismatch' };
+    }
+  }
+
+  const client = await getAocClient();
+  if (client && typeof client.verifyCapability === 'function') {
+    try {
+      const verifyResult = await client.verifyCapability({
+        capability: capabilityPayload,
+        subject: subjectDid || null,
+        grantee: granteeDid || null,
+        marketMakerId: MARKET_MAKER_ID
+      });
+      if (verifyResult?.valid === false) {
+        return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'runtime_verify_failed' };
+      }
+    } catch (error) {
+      logger.warn('AOC capability verification call failed', {
+        requestId: req?.requestId,
+        error: error.message,
+        capability_hash: capabilityHash
+      });
+      return { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'runtime_verify_error' };
+    }
+  }
+
+  return {
+    isValid: true,
+    reason_code: null,
+    validation_result: 'valid',
+    capability: capabilityPayload,
+    capability_hash: capabilityHash,
+    parent_consent_hash: parentConsentHash,
+    expires_at: expiresAt
+  };
+}
+
+export async function resolveUsableAocCapability({
+  req = null,
+  inlineCapability = null,
+  grant = null,
+  subjectDid = null,
+  granteeDid = null,
+  requestedPermissions = []
+}) {
+  const storedCapabilityRecord = req?.referenceAccess?.resolvedCapability
+    || req?.referenceAccess?.grant
+    || grant
+    || null;
+  if (storedCapabilityRecord?.aoc_capability || storedCapabilityRecord?.capability) {
+    const validatedStored = await validateStoredAocCapability({
+      capabilityRecord: storedCapabilityRecord,
+      grant: req?.referenceAccess?.grant || grant || null,
+      subjectDid,
+      granteeDid,
+      requestedPermissions,
+      req
+    });
+    if (validatedStored.isValid) {
+      return { capability: validatedStored.capability, source: 'stored_capability', validation: validatedStored };
+    }
+  }
+
+  if (inlineCapability) {
+    const validatedInline = await validateStoredAocCapability({
+      capabilityRecord: inlineCapability,
+      grant: req?.referenceAccess?.grant || grant || null,
+      subjectDid,
+      granteeDid,
+      requestedPermissions,
+      req
+    });
+    if (validatedInline.isValid) {
+      return { capability: validatedInline.capability, source: 'token_derived_capability', validation: validatedInline };
+    }
+    return { capability: null, source: 'token_derived_capability', validation: validatedInline };
+  }
+
+  const headerCapability = req?.headers?.['x-aoc-capability'] || null;
+  if (headerCapability && shouldAllowHeaderCapability()) {
+    const validatedHeader = await validateStoredAocCapability({
+      capabilityRecord: headerCapability,
+      grant: req?.referenceAccess?.grant || grant || null,
+      subjectDid,
+      granteeDid,
+      requestedPermissions,
+      req
+    });
+    if (validatedHeader.isValid) {
+      return { capability: validatedHeader.capability, source: 'header_capability', validation: validatedHeader };
+    }
+    return { capability: null, source: 'header_capability', validation: validatedHeader };
+  }
+
+  if (headerCapability && !shouldAllowHeaderCapability()) {
     return {
-      value: process.env.AOC_MOCK_CAPABILITY || DEFAULT_MOCK_CAPABILITY,
-      source: 'mock_fallback'
+      capability: null,
+      source: 'header_capability_blocked',
+      validation: { isValid: false, reason_code: 'AOC_CAPABILITY_INVALID', validation_result: 'header_capability_disabled' }
     };
   }
 
-  return { value: null, source: 'missing' };
+  return {
+    capability: null,
+    source: 'missing',
+    validation: { isValid: false, reason_code: 'AOC_CAPABILITY_MISSING', validation_result: 'missing' }
+  };
 }
 
 export const HrkOperations = Object.freeze({
@@ -249,7 +426,8 @@ export async function authorizeAocExecution({
   granteeDid,
   resourceType = 'content',
   resourceRef,
-  req = null
+  req = null,
+  capabilitySource = null
 }) {
   const resolvedOperation = operation || HrkOperations.READ_CANDIDATE_DATA;
   const shouldEnforce = process.env.AOC_ENFORCE === 'true';
@@ -292,20 +470,30 @@ export async function authorizeAocExecution({
     return fallbackDecision;
   }
 
-  const resolvedCapability = resolveAocCapabilityForRequest({ capability, req });
-  const effectiveCapability = resolvedCapability.value;
+  const resolvedCapability = await resolveUsableAocCapability({
+    req,
+    inlineCapability: capability,
+    subjectDid,
+    granteeDid,
+    requestedPermissions
+  });
+  const effectiveCapability = resolvedCapability.capability;
+  const capabilitySourceLabel = capabilitySource || resolvedCapability.source;
 
   if (!effectiveCapability) {
+    const reasonCode = resolvedCapability?.validation?.reason_code || 'AOC_CAPABILITY_MISSING';
     const missingCapDecision = {
       authorized: false,
-      reason_code: 'CAPABILITY_MISSING'
+      reason_code: reasonCode,
+      capability_source: capabilitySourceLabel
     };
 
     logger.info('AOC authorization decision', {
       ...decisionLogBase,
       authorized: false,
       reason_code: missingCapDecision.reason_code,
-      capability_source: resolvedCapability.source
+      capability_source: capabilitySourceLabel,
+      capability_validation_result: resolvedCapability?.validation?.validation_result || 'missing'
     });
 
     return missingCapDecision;
@@ -335,14 +523,16 @@ export async function authorizeAocExecution({
       ...decisionLogBase,
       authorized: Boolean(result?.authorized),
       reason_code: result?.reason_code || null,
-      capability_source: resolvedCapability.source
+      capability_source: capabilitySourceLabel,
+      capability_validation_result: resolvedCapability?.validation?.validation_result || 'valid',
+      capability_hash: resolvedCapability?.validation?.capability_hash || null
     });
 
     return {
       authorized: Boolean(result?.authorized),
       reason_code: result?.reason_code || null,
       raw: result || null,
-      capability_source: resolvedCapability.source
+      capability_source: capabilitySourceLabel
     };
   } catch (error) {
     logger.error('AOC authorizeExecution failed', {

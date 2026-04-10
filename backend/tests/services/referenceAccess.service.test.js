@@ -252,7 +252,65 @@ describe('referenceAccess.service', () => {
     });
 
     await expect(assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' }))
-      .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_MISSING_OR_EXPIRED' });
+      .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_MISSING' });
+
+    process.env.AOC_ENFORCE = previousEnforce;
+  });
+
+  test('enforce mode denies invalid persisted AOC capability', async () => {
+    const previousEnforce = process.env.AOC_ENFORCE;
+    process.env.AOC_ENFORCE = 'true';
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
+      if (table === 'reference_pack_access_grants') {
+        return createBuilder({
+          data: {
+            id: 'grant-9a',
+            status: 'active',
+            candidate_user_id: 'candidate-1',
+            recruiter_user_id: 'recruiter-1',
+            expires_at: '2030-01-01T00:00:00.000Z',
+            aoc_capability: { subject: 'did:hrkey:user:other-candidate', capability_hash: 'cap-123' },
+            aoc_expires_at: '2030-01-01T00:00:00.000Z'
+          },
+          error: null
+        });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    await expect(assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' }))
+      .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_INVALID' });
+
+    process.env.AOC_ENFORCE = previousEnforce;
+  });
+
+  test('enforce mode denies expired persisted AOC capability', async () => {
+    const previousEnforce = process.env.AOC_ENFORCE;
+    process.env.AOC_ENFORCE = 'true';
+
+    fromMock.mockImplementation((table) => {
+      if (table === 'company_signers') return createBuilder({ data: { id: 'signer-1', company_id: 'company-1' }, error: null });
+      if (table === 'reference_pack_access_grants') {
+        return createBuilder({
+          data: {
+            id: 'grant-9b',
+            status: 'active',
+            candidate_user_id: 'candidate-1',
+            recruiter_user_id: 'recruiter-1',
+            expires_at: '2030-01-01T00:00:00.000Z',
+            aoc_capability: { subject: 'did:hrkey:user:candidate-1', grantee: 'did:hrkey:user:recruiter-1', capability_hash: 'cap-123', permissions: ['read_references'] },
+            aoc_expires_at: '2020-01-01T00:00:00.000Z'
+          },
+          error: null
+        });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    await expect(assertRecruiterCanAccessReferencePack({ candidateUserId: 'candidate-1', recruiterUserId: 'recruiter-1' }))
+      .rejects.toMatchObject({ status: 403, reason_code: 'AOC_CAPABILITY_EXPIRED' });
 
     process.env.AOC_ENFORCE = previousEnforce;
   });
@@ -271,7 +329,12 @@ describe('referenceAccess.service', () => {
             candidate_user_id: 'candidate-1',
             recruiter_user_id: 'recruiter-1',
             expires_at: '2030-01-01T00:00:00.000Z',
-            aoc_capability: { capability_hash: 'cap-123' },
+            aoc_capability: {
+              capability_hash: 'cap-123',
+              subject: 'did:hrkey:user:candidate-1',
+              grantee: 'did:hrkey:user:recruiter-1',
+              permissions: ['read_references']
+            },
             aoc_expires_at: '2030-01-01T00:00:00.000Z'
           },
           error: null

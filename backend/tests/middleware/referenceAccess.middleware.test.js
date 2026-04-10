@@ -9,17 +9,23 @@ const mockSupabaseClient = {
 };
 
 const assertRecruiterCanAccessReferencePackMock = jest.fn();
-const getStoredCapabilityForGrantMock = jest.fn(() => null);
 const validateCapabilityTokenMock = jest.fn();
 const extractCapabilityTokenMock = jest.fn();
+const authorizeAocExecutionMock = jest.fn(async () => ({ authorized: true, reason_code: null }));
+const resolveUsableAocCapabilityMock = jest.fn(async ({ inlineCapability = null }) => ({
+  capability: inlineCapability,
+  source: inlineCapability ? 'token_derived_capability' : 'missing',
+  validation: inlineCapability
+    ? { isValid: true, validation_result: 'valid' }
+    : { isValid: false, reason_code: 'AOC_CAPABILITY_MISSING', validation_result: 'missing' }
+}));
 
 jest.unstable_mockModule('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => mockSupabaseClient)
 }));
 
 jest.unstable_mockModule('../../services/referenceAccess.service.js', () => ({
-  assertRecruiterCanAccessReferencePack: assertRecruiterCanAccessReferencePackMock,
-  getStoredCapabilityForGrant: getStoredCapabilityForGrantMock
+  assertRecruiterCanAccessReferencePack: assertRecruiterCanAccessReferencePackMock
 }));
 
 jest.unstable_mockModule('../../services/capabilityToken.service.js', () => ({
@@ -27,6 +33,12 @@ jest.unstable_mockModule('../../services/capabilityToken.service.js', () => ({
   validateCapabilityToken: validateCapabilityTokenMock,
   CapabilityActions: { READ_REFERENCES: 'read_references', READ_REFERENCE_PACK: 'read_reference_pack' },
   CapabilityResourceTypes: { CANDIDATE_REFERENCE_DATA: 'candidate_reference_data' }
+}));
+
+jest.unstable_mockModule('../../services/aocRuntime.service.js', () => ({
+  authorizeAocExecution: authorizeAocExecutionMock,
+  mapLegacyActionToOperation: jest.fn(() => 'read_reference'),
+  resolveUsableAocCapability: resolveUsableAocCapabilityMock
 }));
 
 const middlewareModule = await import('../../middleware/referenceAccess.js');
@@ -65,7 +77,7 @@ describe('reference access middleware', () => {
     jest.clearAllMocks();
     __setSupabaseClientForTests(mockSupabaseClient);
     extractCapabilityTokenMock.mockReturnValue(null);
-    getStoredCapabilityForGrantMock.mockReturnValue(null);
+    process.env.AOC_ALLOW_HEADER_CAPABILITY = 'false';
   });
 
   test('allows candidate owner access', async () => {
@@ -178,7 +190,19 @@ describe('reference access middleware', () => {
 
   test('allows access with valid capability token without authenticated user', async () => {
     extractCapabilityTokenMock.mockReturnValue('cap_token');
-    validateCapabilityTokenMock.mockResolvedValue({ grant: { id: 'grant-cap', status: 'active' } });
+    validateCapabilityTokenMock.mockResolvedValue({
+      grant: {
+        id: 'grant-cap',
+        status: 'active',
+        aoc_capability: {
+          capability_hash: 'cap-from-token',
+          subject: 'did:hrkey:user:candidate-1',
+          grantee: 'did:hrkey:user:capability-grantee',
+          permissions: ['read_references'],
+          expires_at: '2030-01-01T00:00:00.000Z'
+        }
+      }
+    });
 
     const middleware = requireReferenceAccessPermission({
       resolveSubject: async () => ({ candidateUserId: 'candidate-1' }),
@@ -196,6 +220,59 @@ describe('reference access middleware', () => {
       token: 'cap_token',
       action: 'read_references',
       candidateUserId: 'candidate-1'
+    }));
+    expect(authorizeAocExecutionMock).toHaveBeenCalledWith(expect.objectContaining({
+      capabilitySource: 'token_derived_capability'
+    }));
+  });
+
+  test('header capability is blocked by default', async () => {
+    assertRecruiterCanAccessReferencePackMock.mockResolvedValue({ id: 'grant-1', status: 'active' });
+    authorizeAocExecutionMock.mockResolvedValueOnce({ authorized: false, reason_code: 'AOC_CAPABILITY_INVALID' });
+
+    const middleware = requireReferenceAccessPermission({
+      resolveSubject: async () => ({ candidateUserId: 'candidate-1' })
+    });
+    const req = {
+      user: { id: 'recruiter-1', role: 'user' },
+      headers: { 'x-aoc-capability': JSON.stringify({ capability_hash: 'cap-header' }) },
+      params: {},
+      path: '/test'
+    };
+    const res = createRes();
+
+    await middleware(req, res, jest.fn());
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.reason_code).toBe('AOC_CAPABILITY_INVALID');
+  });
+
+  test('header capability can be enabled explicitly', async () => {
+    process.env.AOC_ALLOW_HEADER_CAPABILITY = 'true';
+    assertRecruiterCanAccessReferencePackMock.mockResolvedValue({ id: 'grant-1', status: 'active' });
+    resolveUsableAocCapabilityMock.mockResolvedValueOnce({
+      capability: { capability_hash: 'cap-header-valid' },
+      source: 'header_capability',
+      validation: { isValid: true, validation_result: 'valid' }
+    });
+
+    const middleware = requireReferenceAccessPermission({
+      resolveSubject: async () => ({ candidateUserId: 'candidate-1' })
+    });
+    const req = {
+      user: { id: 'recruiter-1', role: 'user' },
+      headers: { 'x-aoc-capability': JSON.stringify({ capability_hash: 'cap-header-valid' }) },
+      params: {},
+      path: '/test'
+    };
+    const res = createRes();
+    const next = jest.fn();
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(authorizeAocExecutionMock).toHaveBeenCalledWith(expect.objectContaining({
+      capabilitySource: 'header_capability'
     }));
   });
 
@@ -248,4 +325,3 @@ describe('reference access middleware', () => {
     expect(assertRecruiterCanAccessReferencePackMock).not.toHaveBeenCalled();
   });
 });
-
