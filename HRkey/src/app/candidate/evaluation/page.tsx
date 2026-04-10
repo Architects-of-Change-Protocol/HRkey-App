@@ -13,6 +13,7 @@ import type {
   AocEarningsSummary,
   AocTransaction,
   AocConversionRequest,
+  RlusdTransaction,
 } from "@/components/aoc-wallet/types";
 
 type ReferenceAnswer = {
@@ -125,6 +126,8 @@ export default function CandidateEvaluationPage() {
   const [aocTransactions, setAocTransactions] = useState<AocTransaction[]>([]);
   const [aocSummary, setAocSummary] = useState<AocEarningsSummary | null>(null);
   const [conversionRequests, setConversionRequests] = useState<AocConversionRequest[]>([]);
+  const [rlusdBalance, setRlusdBalance] = useState(0);
+  const [rlusdTransactions, setRlusdTransactions] = useState<RlusdTransaction[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -221,6 +224,9 @@ export default function CandidateEvaluationPage() {
       | "rlusd_conversion_requested"
       | "rlusd_conversion_confirmed"
       | "rlusd_conversion_failed"
+      | "rlusd_conversion_completed"
+      | "rlusd_conversion_cancelled"
+      | "rlusd_balance_viewed"
   ) => {
     const payload = {
       event: eventName,
@@ -238,7 +244,7 @@ export default function CandidateEvaluationPage() {
   useEffect(() => {
     const loadWallet = async () => {
       try {
-        const [balanceResponse, transactionsResponse, summaryResponse, conversionsResponse] =
+        const [balanceResponse, transactionsResponse, summaryResponse, conversionsResponse, rlusdBalanceResponse, rlusdTransactionsResponse] =
           await Promise.all([
             apiGet<{
               ok: boolean;
@@ -256,24 +262,37 @@ export default function CandidateEvaluationPage() {
               ok: boolean;
               requests: AocConversionRequest[];
             }>("/api/aoc/convert/requests"),
+            apiGet<{
+              ok: boolean;
+              balance: number;
+            }>("/api/rlusd/balance"),
+            apiGet<{
+              ok: boolean;
+              transactions: RlusdTransaction[];
+            }>("/api/rlusd/transactions"),
           ]);
 
         setAocBalance(Number(balanceResponse?.balance || 0));
         setAocTransactions(transactionsResponse?.transactions || []);
         setAocSummary(summaryResponse?.summary || null);
         setConversionRequests(conversionsResponse?.requests || []);
+        setRlusdBalance(Number(rlusdBalanceResponse?.balance || 0));
+        setRlusdTransactions(rlusdTransactionsResponse?.transactions || []);
       } catch (err) {
         console.error("Unable to load AOC wallet data", err);
         setAocBalance(0);
         setAocTransactions([]);
         setAocSummary(null);
         setConversionRequests([]);
+        setRlusdBalance(0);
+        setRlusdTransactions([]);
       }
     };
 
     loadWallet();
     trackWalletEvent("wallet_viewed");
     trackWalletEvent("earnings_viewed");
+    trackWalletEvent("rlusd_balance_viewed");
   }, []);
 
   const hrScore = evaluation?.scoring.hrScoreResult.hrScore ?? 0;
@@ -548,12 +567,19 @@ export default function CandidateEvaluationPage() {
               />
             </div>
             <RlusdConversionCard
-              balance={aocBalance}
+              aocBalance={aocBalance}
+              rlusdBalance={rlusdBalance}
               requests={conversionRequests}
+              rlusdTransactions={rlusdTransactions}
               onRequestCreated={({ request, balanceAfterDebit }) => {
                 setAocBalance(balanceAfterDebit);
                 setConversionRequests((current) => [request, ...current.filter((row) => row.id !== request.id)]);
                 trackWalletEvent("rlusd_conversion_confirmed");
+              }}
+              onRequestCancelled={({ request, balanceAfterRefund }) => {
+                setAocBalance(balanceAfterRefund);
+                setConversionRequests((current) => [request, ...current.filter((row) => row.id !== request.id)]);
+                trackWalletEvent("rlusd_conversion_cancelled");
               }}
               onIntent={() => {
                 trackWalletEvent("rlusd_conversion_cta_clicked");
@@ -561,6 +587,7 @@ export default function CandidateEvaluationPage() {
               onQuoteRequested={() => trackWalletEvent("rlusd_quote_requested")}
               onConversionRequested={() => trackWalletEvent("rlusd_conversion_requested")}
               onConversionFailed={() => trackWalletEvent("rlusd_conversion_failed")}
+              onRlusdBalanceViewed={() => trackWalletEvent("rlusd_balance_viewed")}
             />
           </div>
 

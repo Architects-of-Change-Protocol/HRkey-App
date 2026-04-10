@@ -1334,6 +1334,11 @@ app.get('/api/aoc/earnings-summary', requireAuth, aocEconomyController.getMyAocE
 app.post('/api/aoc/convert/quote', requireAuth, rlusdConversionController.postRlusdQuote);
 app.post('/api/aoc/convert/requests', requireAuth, rlusdConversionController.postConversionRequest);
 app.get('/api/aoc/convert/requests', requireAuth, rlusdConversionController.getConversionRequests);
+app.post('/api/aoc/convert/requests/:id/complete', requireAuth, rlusdConversionController.postCompleteConversionRequest);
+app.post('/api/aoc/convert/requests/:id/fail', requireAuth, rlusdConversionController.postFailConversionRequest);
+app.post('/api/aoc/convert/requests/:id/cancel', requireAuth, rlusdConversionController.postCancelConversionRequest);
+app.get('/api/rlusd/balance', requireAuth, rlusdConversionController.getMyRlusdBalance);
+app.get('/api/rlusd/transactions', requireAuth, rlusdConversionController.getMyRlusdTransactions);
 
 /**
  * GET /api/reference-pack/:identifier
