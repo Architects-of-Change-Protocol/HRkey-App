@@ -10,6 +10,24 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const roundAoc = (value) => Math.round(Number(value || 0) * 100) / 100;
 const roundRlusd = (value) => Math.round(Number(value || 0) * 1_000_000) / 1_000_000;
 
+
+const RLUSD_LEDGER_EVENT_TYPES = [
+  'conversion_credit',
+  'withdrawal_hold',
+  'withdrawal_release',
+  'withdrawal_complete',
+  'adjustment'
+];
+
+function assertValidLedgerEventType(type) {
+  if (!RLUSD_LEDGER_EVENT_TYPES.includes(type)) {
+    const error = new Error(`Unsupported RLUSD ledger event type: ${type}`);
+    error.status = 400;
+    error.code = 'INVALID_RLUSD_LEDGER_EVENT_TYPE';
+    throw error;
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -98,44 +116,73 @@ async function updateConversionRequest({ conversionRequestId, updates }) {
 export async function getRlusdBalance(userId) {
   const { data, error } = await supabase
     .from('rlusd_balances')
-    .select('user_id, rlusd_balance, updated_at')
+    .select('user_id, rlusd_balance, rlusd_reserved_balance, updated_at')
     .eq('user_id', userId)
     .maybeSingle();
 
   if (error) throw error;
 
-  if (!data) {
-    return {
-      user_id: userId,
-      rlusd_balance: 0,
-      updated_at: null
-    };
-  }
+  const availableBalance = Number(data?.rlusd_balance || 0);
+  const reservedBalance = Number(data?.rlusd_reserved_balance || 0);
 
   return {
-    ...data,
-    rlusd_balance: Number(data.rlusd_balance || 0)
+    user_id: userId,
+    rlusd_balance: availableBalance,
+    rlusd_reserved_balance: reservedBalance,
+    availableBalance,
+    reservedBalance,
+    totalBalance: roundRlusd(availableBalance + reservedBalance),
+    updated_at: data?.updated_at || null
   };
 }
 
-async function upsertRlusdBalance(userId, amount) {
+async function upsertRlusdBalance(userId, { availableBalance, reservedBalance }) {
+  const payload = {
+    user_id: userId,
+    rlusd_balance: roundRlusd(availableBalance),
+    rlusd_reserved_balance: roundRlusd(reservedBalance),
+    updated_at: nowIso()
+  };
+
   const { data, error } = await supabase
     .from('rlusd_balances')
-    .upsert([
-      {
-        user_id: userId,
-        rlusd_balance: roundRlusd(amount),
-        updated_at: nowIso()
-      }
-    ], { onConflict: 'user_id' })
-    .select('user_id, rlusd_balance, updated_at')
+    .upsert([payload], { onConflict: 'user_id' })
+    .select('user_id, rlusd_balance, rlusd_reserved_balance, updated_at')
     .single();
 
   if (error) throw error;
+
+  const available = Number(data?.rlusd_balance || 0);
+  const reserved = Number(data?.rlusd_reserved_balance || 0);
+
   return {
     ...data,
-    rlusd_balance: Number(data.rlusd_balance || 0)
+    rlusd_balance: available,
+    rlusd_reserved_balance: reserved,
+    availableBalance: available,
+    reservedBalance: reserved,
+    totalBalance: roundRlusd(available + reserved)
   };
+}
+
+async function createRlusdTransaction({ userId, amount, direction, type, referenceId = null }) {
+  // Ledger is append-only by design: we only insert new rows, never mutate prior events.
+  assertValidLedgerEventType(type);
+  const { data: transaction, error } = await supabase
+    .from('rlusd_transactions')
+    .insert([{
+      user_id: userId,
+      amount: roundRlusd(amount),
+      direction,
+      type,
+      reference_id: referenceId,
+      created_at: nowIso()
+    }])
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return transaction;
 }
 
 export async function creditRlusdBalance({ userId, amount, type = 'adjustment', referenceId = null }) {
@@ -148,27 +195,20 @@ export async function creditRlusdBalance({ userId, amount, type = 'adjustment', 
   }
 
   const current = await getRlusdBalance(userId);
-  const balance = await upsertRlusdBalance(userId, Number(current.rlusd_balance) + safeAmount);
+  const balance = await upsertRlusdBalance(userId, {
+    availableBalance: current.availableBalance + safeAmount,
+    reservedBalance: current.reservedBalance
+  });
 
-  const { data: transaction, error } = await supabase
-    .from('rlusd_transactions')
-    .insert([{
-      user_id: userId,
-      amount: safeAmount,
-      direction: 'credit',
-      type,
-      reference_id: referenceId,
-      created_at: nowIso()
-    }])
-    .select('*')
-    .single();
+  const transaction = await createRlusdTransaction({
+    userId,
+    amount: safeAmount,
+    direction: 'credit',
+    type,
+    referenceId
+  });
 
-  if (error) throw error;
-
-  return {
-    balance,
-    transaction
-  };
+  return { balance, transaction };
 }
 
 export async function debitRlusdBalance({ userId, amount, type = 'adjustment', referenceId = null }) {
@@ -181,34 +221,115 @@ export async function debitRlusdBalance({ userId, amount, type = 'adjustment', r
   }
 
   const current = await getRlusdBalance(userId);
-  if (Number(current.rlusd_balance) < safeAmount) {
+  if (Number(current.availableBalance) < safeAmount) {
     const error = new Error('Saldo RLUSD insuficiente');
     error.status = 400;
     error.code = 'INSUFFICIENT_RLUSD_BALANCE';
     throw error;
   }
 
-  const balance = await upsertRlusdBalance(userId, Number(current.rlusd_balance) - safeAmount);
+  const balance = await upsertRlusdBalance(userId, {
+    availableBalance: current.availableBalance - safeAmount,
+    reservedBalance: current.reservedBalance
+  });
 
-  const { data: transaction, error } = await supabase
-    .from('rlusd_transactions')
-    .insert([{
-      user_id: userId,
-      amount: safeAmount,
-      direction: 'debit',
-      type,
-      reference_id: referenceId,
-      created_at: nowIso()
-    }])
-    .select('*')
-    .single();
+  const transaction = await createRlusdTransaction({
+    userId,
+    amount: safeAmount,
+    direction: 'debit',
+    type,
+    referenceId
+  });
 
-  if (error) throw error;
+  return { balance, transaction };
+}
 
-  return {
-    balance,
-    transaction
-  };
+export async function holdRlusdBalanceForWithdrawal({ userId, amount, referenceId }) {
+  const safeAmount = roundRlusd(amount);
+  const current = await getRlusdBalance(userId);
+
+  if (safeAmount <= 0) {
+    const error = new Error('Invalid RLUSD hold amount');
+    error.status = 400;
+    error.code = 'INVALID_RLUSD_AMOUNT';
+    throw error;
+  }
+
+  if (current.availableBalance < safeAmount) {
+    const error = new Error('Saldo RLUSD insuficiente');
+    error.status = 400;
+    error.code = 'INSUFFICIENT_RLUSD_BALANCE';
+    throw error;
+  }
+
+  const balance = await upsertRlusdBalance(userId, {
+    availableBalance: current.availableBalance - safeAmount,
+    reservedBalance: current.reservedBalance + safeAmount
+  });
+
+  const transaction = await createRlusdTransaction({
+    userId,
+    amount: safeAmount,
+    direction: 'debit',
+    type: 'withdrawal_hold',
+    referenceId
+  });
+
+  return { balance, transaction };
+}
+
+export async function releaseRlusdWithdrawalHold({ userId, amount, referenceId }) {
+  const safeAmount = roundRlusd(amount);
+  const current = await getRlusdBalance(userId);
+
+  if (current.reservedBalance < safeAmount) {
+    const error = new Error('Saldo reservado insuficiente');
+    error.status = 409;
+    error.code = 'INSUFFICIENT_RLUSD_RESERVED_BALANCE';
+    throw error;
+  }
+
+  const balance = await upsertRlusdBalance(userId, {
+    availableBalance: current.availableBalance + safeAmount,
+    reservedBalance: current.reservedBalance - safeAmount
+  });
+
+  const transaction = await createRlusdTransaction({
+    userId,
+    amount: safeAmount,
+    direction: 'credit',
+    type: 'withdrawal_release',
+    referenceId
+  });
+
+  return { balance, transaction };
+}
+
+export async function completeRlusdWithdrawalHold({ userId, amount, referenceId }) {
+  const safeAmount = roundRlusd(amount);
+  const current = await getRlusdBalance(userId);
+
+  if (current.reservedBalance < safeAmount) {
+    const error = new Error('Saldo reservado insuficiente');
+    error.status = 409;
+    error.code = 'INSUFFICIENT_RLUSD_RESERVED_BALANCE';
+    throw error;
+  }
+
+  const balance = await upsertRlusdBalance(userId, {
+    availableBalance: current.availableBalance,
+    reservedBalance: current.reservedBalance - safeAmount
+  });
+
+  const transaction = await createRlusdTransaction({
+    userId,
+    amount: safeAmount,
+    direction: 'debit',
+    type: 'withdrawal_complete',
+    referenceId
+  });
+
+  return { balance, transaction };
 }
 
 export async function listRlusdTransactions({ userId, limit = 20 }) {
@@ -261,10 +382,7 @@ export async function completeConversionRequest({ conversionRequestId }) {
   }
 
   if (current.status === 'pending') {
-    await updateConversionRequest({
-      conversionRequestId,
-      updates: { status: 'processing' }
-    });
+    await updateConversionRequest({ conversionRequestId, updates: { status: 'processing' } });
   }
 
   const credited = await creditRlusdBalance({
@@ -276,11 +394,7 @@ export async function completeConversionRequest({ conversionRequestId }) {
 
   const completedRequest = await updateConversionRequest({
     conversionRequestId,
-    updates: {
-      status: 'completed',
-      failure_reason: null,
-      completed_at: nowIso()
-    }
+    updates: { status: 'completed', failure_reason: null, completed_at: nowIso() }
   });
 
   await logEvent({
@@ -346,10 +460,7 @@ export async function failConversionRequest({ conversionRequestId, failureReason
     source: 'backend'
   });
 
-  return {
-    request: failedRequest,
-    balanceAfterRefund
-  };
+  return { request: failedRequest, balanceAfterRefund };
 }
 
 export async function cancelConversionRequest({ userId, conversionRequestId }) {
@@ -372,33 +483,26 @@ export async function cancelConversionRequest({ userId, conversionRequestId }) {
 
   const cancelledRequest = await updateConversionRequest({
     conversionRequestId,
-    updates: {
-      status: 'cancelled',
-      failure_reason: null,
-      completed_at: null
-    }
+    updates: { status: 'cancelled', failure_reason: null, completed_at: null }
   });
 
   await logEvent({
     userId: current.user_id,
     eventType: 'rlusd_conversion_cancelled',
-    context: {
-      conversionRequestId: current.id,
-      sourceAmount: Number(current.source_amount)
-    },
+    context: { conversionRequestId: current.id, sourceAmount: Number(current.source_amount) },
     source: 'backend'
   });
 
-  return {
-    request: cancelledRequest,
-    balanceAfterRefund
-  };
+  return { request: cancelledRequest, balanceAfterRefund };
 }
 
 export default {
   getRlusdBalance,
   creditRlusdBalance,
   debitRlusdBalance,
+  holdRlusdBalanceForWithdrawal,
+  releaseRlusdWithdrawalHold,
+  completeRlusdWithdrawalHold,
   listRlusdTransactions,
   completeConversionRequest,
   failConversionRequest,

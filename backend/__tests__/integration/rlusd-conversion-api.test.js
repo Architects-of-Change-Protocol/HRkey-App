@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import request from 'supertest';
 import { createSupabaseMock, mockSuccess } from '../utils/supabase-mock';
+import { buildWithdrawalPayloadFingerprint } from '../../services/rlusdWithdrawal.utils.js';
 
 process.env.ALLOW_TEST_AUTH_BYPASS = 'true';
 
@@ -267,6 +268,7 @@ describe('RLUSD conversion API', () => {
       maybeSingleResponses: [mockSuccess({
         user_id: authHeaders['x-test-user-id'],
         rlusd_balance: 12.34,
+        rlusd_reserved_balance: 2,
         updated_at: '2026-04-03T00:00:00.000Z'
       })]
     });
@@ -278,6 +280,241 @@ describe('RLUSD conversion API', () => {
     expect(response.status).toBe(200);
     expect(response.body.ok).toBe(true);
     expect(response.body.balance).toBe(12.34);
+    expect(response.body.availableBalance).toBe(12.34);
+    expect(response.body.reservedBalance).toBe(2);
+    expect(response.body.totalBalance).toBe(14.34);
+  });
+
+
+
+  test('quote de retiro válido', async () => {
+    setTableResponses('rlusd_balances', {
+      maybeSingleResponses: [mockSuccess({
+        user_id: authHeaders['x-test-user-id'],
+        rlusd_balance: 10,
+        rlusd_reserved_balance: 0,
+        updated_at: '2026-04-03T00:00:00.000Z'
+      })]
+    });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/quote')
+      .set(authHeaders)
+      .send({ amount: 10 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.quote.netAmount).toBeGreaterThanOrEqual(0);
+  });
+
+  test('quote de retiro falla por monto inválido', async () => {
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/quote')
+      .set(authHeaders)
+      .send({ amount: 0 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('INVALID_WITHDRAWAL_AMOUNT');
+  });
+
+  test('create withdrawal reserva balance RLUSD', async () => {
+    setTableResponses('rlusd_balances', {
+      maybeSingleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 10, rlusd_reserved_balance: 0 }), mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 10, rlusd_reserved_balance: 0 })],
+      singleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 10 })],
+      upsertResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 10 })]
+    });
+    setTableResponses('rlusd_withdrawal_requests', {
+      singleResponses: [mockSuccess({ id: 'wd-1', user_id: authHeaders['x-test-user-id'], amount: 10, fee_amount: 0, net_amount: 10, status: 'pending_review', destination_type: 'wallet', created_at: '2026-04-03T00:00:00.000Z' })]
+    });
+    setTableResponses('rlusd_transactions', {
+      singleResponses: [mockSuccess({ id: 'rltx-hold-1', type: 'withdrawal_hold' })]
+    });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .set('Idempotency-Key', 'idem-create-1')
+      .send({ amount: 10, destinationType: 'wallet', destinationRef: 'wallet-123' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.withdrawalRequest.status).toBe('pending_review');
+    expect(response.body.balance.availableBalance).toBe(0);
+    expect(response.body.balance.reservedBalance).toBe(10);
+  });
+
+
+
+  test('create withdrawal requiere Idempotency-Key', async () => {
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .send({ amount: 10, destinationType: 'wallet' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('IDEMPOTENCY_KEY_REQUIRED');
+  });
+
+  test('idempotency retry idéntico devuelve misma solicitud sin duplicar hold', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [
+        mockSuccess(null),
+        mockSuccess({ id: 'wd-idem-1', user_id: authHeaders['x-test-user-id'], amount: 10, payload_fingerprint: buildWithdrawalPayloadFingerprint({ amount: 10, destinationType: 'wallet', destinationLabel: null, destinationRef: null, referenceNote: null }), idempotency_key: 'idem-dup', status: 'pending_review' }),
+      ],
+      singleResponses: [mockSuccess({ id: 'wd-idem-1', user_id: authHeaders['x-test-user-id'], amount: 10, fee_amount: 0, net_amount: 10, status: 'pending_review', payload_fingerprint: buildWithdrawalPayloadFingerprint({ amount: 10, destinationType: 'wallet', destinationLabel: null, destinationRef: null, referenceNote: null }), idempotency_key: 'idem-dup', destination_type: 'wallet' })]
+    });
+    setTableResponses('rlusd_balances', {
+      maybeSingleResponses: [
+        mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 20, rlusd_reserved_balance: 0 }),
+        mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 20, rlusd_reserved_balance: 0 }),
+        mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 10, rlusd_reserved_balance: 10 })
+      ],
+      singleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 10, rlusd_reserved_balance: 10 })],
+      upsertResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 10, rlusd_reserved_balance: 10 })]
+    });
+    setTableResponses('rlusd_transactions', { singleResponses: [mockSuccess({ id: 'hold-idem-1', type: 'withdrawal_hold' })] });
+
+    const first = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .set('Idempotency-Key', 'idem-dup')
+      .send({ amount: 10, destinationType: 'wallet' });
+
+    expect(first.status).toBe(201);
+
+    const second = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .set('Idempotency-Key', 'idem-dup')
+      .send({ amount: 10, destinationType: 'wallet' });
+
+    expect(second.status).toBe(200);
+    expect(second.body.idempotentReplay).toBe(true);
+    expect(second.body.withdrawalRequest.id).toBe('wd-idem-1');
+  });
+
+  test('idempotency retry con payload distinto responde 409', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [mockSuccess({ id: 'wd-idem-2', user_id: authHeaders['x-test-user-id'], amount: 10, payload_fingerprint: 'different-fingerprint', idempotency_key: 'idem-conflict' })]
+    });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .set('Idempotency-Key', 'idem-conflict')
+      .send({ amount: 10, destinationType: 'wallet' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('IDEMPOTENCY_KEY_PAYLOAD_MISMATCH');
+  });
+
+  test('cancel withdrawal devuelve reserved -> available', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [mockSuccess({ id: 'wd-cancel-1', user_id: authHeaders['x-test-user-id'], amount: 7, status: 'pending_review' })],
+      singleResponses: [mockSuccess({ id: 'wd-cancel-1', status: 'cancelled' })]
+    });
+    setTableResponses('rlusd_balances', {
+      maybeSingleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 2, rlusd_reserved_balance: 7 })],
+      singleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 9, rlusd_reserved_balance: 0 })],
+      upsertResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 9, rlusd_reserved_balance: 0 })]
+    });
+    setTableResponses('rlusd_transactions', { singleResponses: [mockSuccess({ id: 'rltx-release-1', type: 'withdrawal_release' })] });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/wd-cancel-1/cancel')
+      .set(authHeaders)
+      .send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body.request.status).toBe('cancelled');
+    expect(response.body.balance.availableBalance).toBe(9);
+  });
+
+
+
+  test('fail withdrawal devuelve reserved -> available', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [mockSuccess({ id: 'wd-fail-1', user_id: authHeaders['x-test-user-id'], amount: 8, status: 'processing' }), mockSuccess({ id: 'wd-fail-1', user_id: authHeaders['x-test-user-id'], amount: 8, status: 'processing' })],
+      singleResponses: [mockSuccess({ id: 'wd-fail-1', status: 'failed', failure_reason: 'processor' })]
+    });
+    setTableResponses('rlusd_balances', {
+      maybeSingleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 1, rlusd_reserved_balance: 8 })],
+      singleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 9, rlusd_reserved_balance: 0 })],
+      upsertResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 9, rlusd_reserved_balance: 0 })]
+    });
+    setTableResponses('rlusd_transactions', { singleResponses: [mockSuccess({ id: 'rltx-release-2', type: 'withdrawal_release' })] });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/wd-fail-1/fail')
+      .set(adminHeaders)
+      .send({ failureReason: 'processor' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.request.status).toBe('failed');
+  });
+
+  test('complete withdrawal consume reserved', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [mockSuccess({ id: 'wd-complete-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'processing' }), mockSuccess({ id: 'wd-complete-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'processing' })],
+      singleResponses: [mockSuccess({ id: 'wd-complete-1', status: 'completed', completed_at: '2026-04-03T00:00:00.000Z' })]
+    });
+    setTableResponses('rlusd_balances', {
+      maybeSingleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 5 })],
+      singleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 0 })],
+      upsertResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 0 })]
+    });
+    setTableResponses('rlusd_transactions', { singleResponses: [mockSuccess({ id: 'rltx-complete-1', type: 'withdrawal_complete' })] });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/wd-complete-1/complete')
+      .set(adminHeaders)
+      .send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body.request.status).toBe('completed');
+    expect(response.body.balance.reservedBalance).toBe(0);
+  });
+
+  test('list withdrawals funciona', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      selectResponses: [mockSuccess([{ id: 'wd-list-1', user_id: authHeaders['x-test-user-id'], amount: 5, fee_amount: 0, net_amount: 5, status: 'pending_review', destination_type: 'wallet', created_at: '2026-04-03T00:00:00.000Z', updated_at: '2026-04-03T00:00:00.000Z' }])]
+    });
+
+    const response = await request(app)
+      .get('/api/rlusd/withdrawals')
+      .set(authHeaders);
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body.requests)).toBe(true);
+    expect(response.body.requests[0].id).toBe('wd-list-1');
+  });
+
+
+
+  test('feature flag off bloquea create withdrawal', async () => {
+    process.env.RLUSD_WITHDRAWALS_ENABLED = 'false';
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .set('Idempotency-Key', 'idem-off')
+      .send({ amount: 10, destinationType: 'wallet' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error).toBe('RLUSD_WITHDRAWALS_DISABLED');
+    process.env.RLUSD_WITHDRAWALS_ENABLED = 'true';
+  });
+
+  test('transición inválida fail desde pending_review devuelve 409', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [mockSuccess({ id: 'wd-invalid-1', user_id: authHeaders['x-test-user-id'], amount: 10, status: 'pending_review' }), mockSuccess({ id: 'wd-invalid-1', user_id: authHeaders['x-test-user-id'], amount: 10, status: 'pending_review' })]
+    });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/wd-invalid-1/fail')
+      .set(adminHeaders)
+      .send({ failureReason: 'x' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('INVALID_STATUS_TRANSITION');
   });
 
   test('RLUSD transactions endpoint funciona', async () => {

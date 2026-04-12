@@ -207,7 +207,13 @@ export async function getMyRlusdBalance(req, res) {
     }
 
     const balance = await getRlusdBalance(userId);
-    return res.status(200).json({ ok: true, balance: Number(balance.rlusd_balance || 0) });
+    return res.status(200).json({
+      ok: true,
+      balance: Number(balance.availableBalance || 0),
+      availableBalance: Number(balance.availableBalance || 0),
+      reservedBalance: Number(balance.reservedBalance || 0),
+      totalBalance: Number(balance.totalBalance || 0)
+    });
   } catch (error) {
     logger.warn('Failed to fetch RLUSD balance', {
       requestId: req.requestId,

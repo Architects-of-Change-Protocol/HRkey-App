@@ -77,6 +77,7 @@ const louAgentController = lazyController(() => import('./controllers/louAgent.c
 const cvController = lazyController(() => import('./controllers/cv.controller.js'));
 const aocEconomyController = lazyController(() => import('./controllers/aocEconomy.controller.js'));
 const rlusdConversionController = lazyController(() => import('./controllers/rlusdConversion.controller.js'));
+const rlusdWithdrawalController = lazyController(() => import('./controllers/rlusdWithdrawal.controller.js'));
 
 const loadHrkeyScoreService = lazyModule(() => import('./hrkeyScoreService.js'));
 const loadScoreSnapshots = lazyModule(() => import('./services/hrscore/scoreSnapshots.js'));
@@ -1339,6 +1340,14 @@ app.post('/api/aoc/convert/requests/:id/fail', requireAuth, rlusdConversionContr
 app.post('/api/aoc/convert/requests/:id/cancel', requireAuth, rlusdConversionController.postCancelConversionRequest);
 app.get('/api/rlusd/balance', requireAuth, rlusdConversionController.getMyRlusdBalance);
 app.get('/api/rlusd/transactions', requireAuth, rlusdConversionController.getMyRlusdTransactions);
+
+app.post('/api/rlusd/withdrawals/quote', requireAuth, rlusdWithdrawalController.postWithdrawalQuote);
+app.post('/api/rlusd/withdrawals', requireAuth, rlusdWithdrawalController.postWithdrawalRequest);
+app.get('/api/rlusd/withdrawals', requireAuth, rlusdWithdrawalController.getWithdrawalRequests);
+app.post('/api/rlusd/withdrawals/:id/process', requireAuth, rlusdWithdrawalController.postProcessWithdrawalRequest);
+app.post('/api/rlusd/withdrawals/:id/complete', requireAuth, rlusdWithdrawalController.postCompleteWithdrawalRequest);
+app.post('/api/rlusd/withdrawals/:id/fail', requireAuth, rlusdWithdrawalController.postFailWithdrawalRequest);
+app.post('/api/rlusd/withdrawals/:id/cancel', requireAuth, rlusdWithdrawalController.postCancelWithdrawalRequest);
 
 /**
  * GET /api/reference-pack/:identifier

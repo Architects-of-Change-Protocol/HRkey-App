@@ -14,6 +14,7 @@ import type {
   AocTransaction,
   AocConversionRequest,
   RlusdTransaction,
+  RlusdWithdrawalRequest,
 } from "@/components/aoc-wallet/types";
 
 type ReferenceAnswer = {
@@ -126,8 +127,10 @@ export default function CandidateEvaluationPage() {
   const [aocTransactions, setAocTransactions] = useState<AocTransaction[]>([]);
   const [aocSummary, setAocSummary] = useState<AocEarningsSummary | null>(null);
   const [conversionRequests, setConversionRequests] = useState<AocConversionRequest[]>([]);
-  const [rlusdBalance, setRlusdBalance] = useState(0);
+  const [rlusdAvailableBalance, setRlusdAvailableBalance] = useState(0);
+  const [rlusdReservedBalance, setRlusdReservedBalance] = useState(0);
   const [rlusdTransactions, setRlusdTransactions] = useState<RlusdTransaction[]>([]);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<RlusdWithdrawalRequest[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -227,6 +230,10 @@ export default function CandidateEvaluationPage() {
       | "rlusd_conversion_completed"
       | "rlusd_conversion_cancelled"
       | "rlusd_balance_viewed"
+      | "rlusd_withdrawal_quote_requested"
+      | "rlusd_withdrawal_requested"
+      | "rlusd_withdrawal_failed"
+      | "rlusd_withdrawal_cancelled"
   ) => {
     const payload = {
       event: eventName,
@@ -244,7 +251,7 @@ export default function CandidateEvaluationPage() {
   useEffect(() => {
     const loadWallet = async () => {
       try {
-        const [balanceResponse, transactionsResponse, summaryResponse, conversionsResponse, rlusdBalanceResponse, rlusdTransactionsResponse] =
+        const [balanceResponse, transactionsResponse, summaryResponse, conversionsResponse, rlusdBalanceResponse, rlusdTransactionsResponse, withdrawalRequestsResponse] =
           await Promise.all([
             apiGet<{
               ok: boolean;
@@ -265,27 +272,37 @@ export default function CandidateEvaluationPage() {
             apiGet<{
               ok: boolean;
               balance: number;
+              availableBalance?: number;
+              reservedBalance?: number;
             }>("/api/rlusd/balance"),
             apiGet<{
               ok: boolean;
               transactions: RlusdTransaction[];
             }>("/api/rlusd/transactions"),
+            apiGet<{
+              ok: boolean;
+              requests: RlusdWithdrawalRequest[];
+            }>("/api/rlusd/withdrawals"),
           ]);
 
         setAocBalance(Number(balanceResponse?.balance || 0));
         setAocTransactions(transactionsResponse?.transactions || []);
         setAocSummary(summaryResponse?.summary || null);
         setConversionRequests(conversionsResponse?.requests || []);
-        setRlusdBalance(Number(rlusdBalanceResponse?.balance || 0));
+        setRlusdAvailableBalance(Number(rlusdBalanceResponse?.availableBalance ?? rlusdBalanceResponse?.balance ?? 0));
+        setRlusdReservedBalance(Number(rlusdBalanceResponse?.reservedBalance || 0));
         setRlusdTransactions(rlusdTransactionsResponse?.transactions || []);
+        setWithdrawalRequests(withdrawalRequestsResponse?.requests || []);
       } catch (err) {
         console.error("Unable to load AOC wallet data", err);
         setAocBalance(0);
         setAocTransactions([]);
         setAocSummary(null);
         setConversionRequests([]);
-        setRlusdBalance(0);
+        setRlusdAvailableBalance(0);
+        setRlusdReservedBalance(0);
         setRlusdTransactions([]);
+        setWithdrawalRequests([]);
       }
     };
 
@@ -568,8 +585,10 @@ export default function CandidateEvaluationPage() {
             </div>
             <RlusdConversionCard
               aocBalance={aocBalance}
-              rlusdBalance={rlusdBalance}
+              rlusdAvailableBalance={rlusdAvailableBalance}
+              rlusdReservedBalance={rlusdReservedBalance}
               requests={conversionRequests}
+              withdrawalRequests={withdrawalRequests}
               rlusdTransactions={rlusdTransactions}
               onRequestCreated={({ request, balanceAfterDebit }) => {
                 setAocBalance(balanceAfterDebit);
@@ -581,6 +600,17 @@ export default function CandidateEvaluationPage() {
                 setConversionRequests((current) => [request, ...current.filter((row) => row.id !== request.id)]);
                 trackWalletEvent("rlusd_conversion_cancelled");
               }}
+
+              onWithdrawalCreated={({ request, availableBalance, reservedBalance }) => {
+                setRlusdAvailableBalance(availableBalance);
+                setRlusdReservedBalance(reservedBalance);
+                setWithdrawalRequests((current) => [request, ...current.filter((row) => row.id !== request.id)]);
+              }}
+              onWithdrawalCancelled={({ request, availableBalance, reservedBalance }) => {
+                setRlusdAvailableBalance(availableBalance);
+                setRlusdReservedBalance(reservedBalance);
+                setWithdrawalRequests((current) => [request, ...current.filter((row) => row.id !== request.id)]);
+              }}
               onIntent={() => {
                 trackWalletEvent("rlusd_conversion_cta_clicked");
               }}
@@ -588,6 +618,10 @@ export default function CandidateEvaluationPage() {
               onConversionRequested={() => trackWalletEvent("rlusd_conversion_requested")}
               onConversionFailed={() => trackWalletEvent("rlusd_conversion_failed")}
               onRlusdBalanceViewed={() => trackWalletEvent("rlusd_balance_viewed")}
+              onWithdrawalQuoteRequested={() => trackWalletEvent("rlusd_withdrawal_quote_requested")}
+              onWithdrawalRequested={() => trackWalletEvent("rlusd_withdrawal_requested")}
+              onWithdrawalFailed={() => trackWalletEvent("rlusd_withdrawal_failed")}
+              onWithdrawalCancelledEvent={() => trackWalletEvent("rlusd_withdrawal_cancelled")}
             />
           </div>
 
