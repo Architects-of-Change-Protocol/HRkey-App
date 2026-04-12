@@ -28,6 +28,14 @@ export type RlusdQuote = {
   quoteExpiresAt: string;
 };
 
+export type RlusdWithdrawalQuote = {
+  amount: number;
+  feeAmount: number;
+  netAmount: number;
+  minWithdrawal: number;
+  availableBalance: number;
+};
+
 export type AocConversionRequest = {
   id: string;
   user_id: string;
@@ -42,6 +50,23 @@ export type AocConversionRequest = {
   reference_note?: string | null;
   quote_expires_at?: string | null;
   wallet_destination?: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+  failure_reason?: string | null;
+};
+
+export type RlusdWithdrawalRequest = {
+  id: string;
+  user_id: string;
+  amount: number;
+  fee_amount: number;
+  net_amount: number;
+  status: 'requested' | 'pending_review' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  destination_type: 'wallet' | 'bank' | 'sinpe' | 'other';
+  destination_label?: string | null;
+  destination_ref?: string | null;
+  reference_note?: string | null;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
