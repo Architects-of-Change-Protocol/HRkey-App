@@ -28,8 +28,14 @@ async function loadHostedRuntimeCtor() {
 async function getAocClient() {
   if (clientInstance) return clientInstance;
 
-  const baseUrl = process.env.AOC_BASE_URL;
-  const apiKey = process.env.AOC_API_KEY;
+  const baseUrl = process.env.AOC_RUNTIME_BASE_URL || process.env.AOC_BASE_URL;
+  const apiKey = process.env.AOC_RUNTIME_API_KEY || process.env.AOC_API_KEY;
+  const runtimeMode = String(process.env.AOC_RUNTIME_MODE || '').toLowerCase();
+  const useRemoteRuntime = String(process.env.USE_AOC_TRUST_RUNTIME || '').toLowerCase() === 'true';
+
+  if (useRemoteRuntime && runtimeMode !== 'remote') {
+    return null;
+  }
 
   if (!baseUrl || !apiKey) {
     return null;

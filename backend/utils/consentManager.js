@@ -7,6 +7,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import logger from '../logger.js';
+import { grantIdentityConsent } from '../services/aocRuntimeClient.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
@@ -198,6 +199,30 @@ export async function createConsent({
       expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
       metadata
     };
+
+    try {
+      await grantIdentityConsent({
+        subjectUserId,
+        grantedToOrg,
+        grantedToUser,
+        resourceType,
+        resourceId,
+        scope,
+        purpose,
+        expiresAt: consentData.expires_at,
+        metadata
+      });
+    } catch (runtimeError) {
+      logger.error('AOC runtime grantIdentityConsent failed', {
+        subjectUserId,
+        grantedToOrg,
+        grantedToUser,
+        resourceType,
+        reason_code: runtimeError.reason_code || runtimeError.code || null,
+        error: runtimeError.message
+      });
+      throw runtimeError;
+    }
 
     const { data: consent, error } = await getSupabaseClient()
       .from('consents')

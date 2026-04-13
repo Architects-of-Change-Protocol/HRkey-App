@@ -1,4 +1,6 @@
 import { executeSinpeMobileManualPayout } from './payoutAdapters/sinpeMobileManual.adapter.js';
+import { executePayout as executePayoutPrecheck } from './aocRuntimeClient.js';
+import logger from '../logger.js';
 
 const DEFAULT_PROVIDER_BY_RAIL = {
   sinpe_mobile: 'manual_sinpe_cr'
@@ -23,6 +25,30 @@ function resolveProvider(withdrawalRequest, options = {}, rail) {
 export async function executeWithdrawalPayout(withdrawalRequest, options = {}) {
   const payoutRail = resolveRail(withdrawalRequest, options);
   const payoutProvider = resolveProvider(withdrawalRequest, options, payoutRail);
+
+  const precheck = await executePayoutPrecheck({
+    withdrawalRequestId: withdrawalRequest?.id || null,
+    userId: withdrawalRequest?.user_id || null,
+    payoutRail,
+    payoutProvider,
+    amount: withdrawalRequest?.amount_rlusd || withdrawalRequest?.amount || null,
+    destinationType: withdrawalRequest?.destination_type || null
+  });
+
+  if (!precheck?.skipped && precheck?.approved === false) {
+    const error = new Error(precheck?.message || 'Payout execution denied by AOC runtime');
+    error.status = precheck?.status || 403;
+    error.code = precheck?.reason_code || 'AOC_PAYOUT_DENIED';
+    throw error;
+  }
+
+  logger.info('AOC runtime payout pre-check', {
+    withdrawalRequestId: withdrawalRequest?.id || null,
+    payoutRail,
+    payoutProvider,
+    mode: precheck?.skipped ? 'local' : 'remote',
+    approved: precheck?.skipped ? true : precheck?.approved !== false
+  });
 
   if (payoutRail === 'sinpe_mobile' && payoutProvider === 'manual_sinpe_cr') {
     return executeSinpeMobileManualPayout(withdrawalRequest);
