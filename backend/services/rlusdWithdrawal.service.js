@@ -30,6 +30,47 @@ function withdrawalsFeatureEnabled() {
   return String(process.env.RLUSD_WITHDRAWALS_ENABLED || 'true').toLowerCase() !== 'false';
 }
 
+function sinpeRailFeatureEnabled() {
+  return String(process.env.RLUSD_SINPE_MOBILE_ENABLED || 'true').toLowerCase() !== 'false';
+}
+
+function normalizeOptionalNote(value, { max = 500 } = {}) {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  return normalized.slice(0, max);
+}
+
+function resolveDefaultPayoutRoute(destinationType) {
+  if (destinationType === 'sinpe_mobile') {
+    return { payoutRail: 'sinpe_mobile', payoutProvider: 'manual_sinpe_cr' };
+  }
+  return { payoutRail: null, payoutProvider: null };
+}
+
+function assertSinpeRailEnabled(destinationType) {
+  if (destinationType !== 'sinpe_mobile') return;
+  if (!sinpeRailFeatureEnabled()) {
+    const error = new Error('SINPE Móvil withdrawals are currently disabled');
+    error.status = 503;
+    error.code = 'RLUSD_SINPE_MOBILE_DISABLED';
+    throw error;
+  }
+}
+
+function buildPayoutContext(request, action, extra = {}) {
+  return {
+    withdrawalRequestId: request.id,
+    idempotencyKey: request.idempotency_key || null,
+    action,
+    destinationType: request.destination_type || null,
+    normalizedDestination: request.destination_ref || null,
+    payoutRail: request.payout_rail || null,
+    payoutProvider: request.payout_provider || null,
+    ...extra
+  };
+}
+
 export function assertWithdrawalsFeatureEnabled() {
   if (!withdrawalsFeatureEnabled()) {
     const error = new Error('RLUSD withdrawals feature is currently disabled');
@@ -144,8 +185,10 @@ export async function createWithdrawalRequest({ userId, idempotencyKey, ...rawIn
   assertValidDecimalAmount(sanitized.amount);
   assertMinWithdrawal(sanitized.amount);
   assertValidDestinationType(sanitized.destinationType);
+  assertSinpeRailEnabled(sanitized.destinationType);
 
   const payloadFingerprint = buildWithdrawalPayloadFingerprint(sanitized);
+  const payoutRoute = resolveDefaultPayoutRoute(sanitized.destinationType);
 
   return withWithdrawalBalanceLock({
     userId,
@@ -172,6 +215,9 @@ export async function createWithdrawalRequest({ userId, idempotencyKey, ...rawIn
             destination_type: sanitized.destinationType,
             destination_label: sanitized.destinationLabel,
             destination_ref: sanitized.destinationRef,
+            payout_rail: payoutRoute.payoutRail,
+            payout_provider: payoutRoute.payoutProvider,
+            payout_destination_snapshot: sanitized.destinationRef ? JSON.stringify({ type: sanitized.destinationType, value: sanitized.destinationRef }) : null,
             reference_note: sanitized.referenceNote,
             idempotency_key: safeKey,
             payload_fingerprint: payloadFingerprint,
@@ -199,14 +245,12 @@ export async function createWithdrawalRequest({ userId, idempotencyKey, ...rawIn
       await logEvent({
         userId,
         eventType: 'rlusd_withdrawal_requested',
-        context: {
-          withdrawalRequestId: request.id,
-          idempotencyKey: safeKey,
+        context: buildPayoutContext(request, 'create', {
           amount: quote.amount,
           feeAmount: quote.feeAmount,
           netAmount: quote.netAmount,
-          destinationType: sanitized.destinationType
-        },
+          idempotencyKey: safeKey
+        }),
         source: 'backend'
       });
 
@@ -253,13 +297,22 @@ export async function cancelWithdrawalRequest({ userId, withdrawalRequestId }) {
 
       const request = await updateWithdrawalRequest({
         withdrawalRequestId,
-        updates: { status: WITHDRAWAL_STATUSES.CANCELLED, failure_reason: null, completed_at: null }
+        updates: {
+          status: WITHDRAWAL_STATUSES.CANCELLED,
+          failure_reason: null,
+          completed_at: null,
+          payout_status: 'cancelled',
+          payout_status_detail: 'withdrawal_cancelled_by_user'
+        }
       });
 
       await logEvent({
         userId,
         eventType: 'rlusd_withdrawal_cancelled',
-        context: { withdrawalRequestId: current.id, idempotencyKey: current.idempotency_key || null, action: 'cancel', from: current.status, to: WITHDRAWAL_STATUSES.CANCELLED },
+        context: buildPayoutContext(request, 'cancel', {
+          from: current.status,
+          to: WITHDRAWAL_STATUSES.CANCELLED
+        }),
         source: 'backend'
       });
 
@@ -268,7 +321,7 @@ export async function cancelWithdrawalRequest({ userId, withdrawalRequestId }) {
   });
 }
 
-export async function markWithdrawalProcessing({ withdrawalRequestId }) {
+export async function markWithdrawalProcessing({ withdrawalRequestId, payoutRail = null, payoutProvider = null, operatorNote = null }) {
   assertWithdrawalsFeatureEnabled();
 
   const current = await getWithdrawalRequestForUser({ withdrawalRequestId });
@@ -282,19 +335,60 @@ export async function markWithdrawalProcessing({ withdrawalRequestId }) {
 
   assertValidWithdrawalTransition(current.status, WITHDRAWAL_STATUSES.PROCESSING);
 
-  const request = await updateWithdrawalRequest({ withdrawalRequestId, updates: { status: WITHDRAWAL_STATUSES.PROCESSING } });
+  const route = {
+    payoutRail: String(payoutRail || current.payout_rail || current.destination_type || '').trim().toLowerCase() || null,
+    payoutProvider: String(payoutProvider || current.payout_provider || '').trim().toLowerCase() || null
+  };
+
+  if (route.payoutRail === 'sinpe') route.payoutRail = 'sinpe_mobile';
+  if (route.payoutRail === 'sinpe_mobile' && !route.payoutProvider) route.payoutProvider = 'manual_sinpe_cr';
+
+  assertSinpeRailEnabled(route.payoutRail);
+
+  const requestInProcessing = await updateWithdrawalRequest({
+    withdrawalRequestId,
+    updates: {
+      status: WITHDRAWAL_STATUSES.PROCESSING,
+      payout_rail: route.payoutRail,
+      payout_provider: route.payoutProvider,
+      payout_status: 'processing',
+      payout_status_detail: 'executor_started',
+      payout_processed_at: nowIso(),
+      payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 })
+    }
+  });
+
+  const payoutResult = await executeWithdrawalPayout(requestInProcessing, route);
+  const request = await updateWithdrawalRequest({
+    withdrawalRequestId,
+    updates: {
+      payout_rail: payoutResult.rail || route.payoutRail,
+      payout_provider: payoutResult.provider || route.payoutProvider,
+      payout_reference: payoutResult.reference || null,
+      payout_external_id: payoutResult.externalId || null,
+      payout_status: payoutResult.status || 'processing',
+      payout_status_detail: payoutResult.statusDetail || null,
+      payout_processed_at: payoutResult.processedAt || nowIso(),
+      payout_destination_snapshot: payoutResult.destinationSnapshot ? JSON.stringify(payoutResult.destinationSnapshot) : (requestInProcessing.payout_destination_snapshot || null)
+    }
+  });
 
   await logEvent({
     userId: current.user_id,
     eventType: 'rlusd_withdrawal_processing',
-    context: { withdrawalRequestId: current.id, idempotencyKey: current.idempotency_key || null, action: 'process', from: current.status, to: WITHDRAWAL_STATUSES.PROCESSING },
+    context: buildPayoutContext(request, 'process', {
+      from: current.status,
+      to: WITHDRAWAL_STATUSES.PROCESSING,
+      payoutStatus: request.payout_status,
+      payoutStatusDetail: request.payout_status_detail
+    }),
     source: 'backend'
   });
 
   return { request, alreadyProcessing: false };
 }
 
-export async function completeWithdrawalRequest({ withdrawalRequestId }) {
+export async function completeWithdrawalRequest({ withdrawalRequestId, payoutReference = null, externalId = null, operatorNote = null }) {
   assertWithdrawalsFeatureEnabled();
 
   const current = await getWithdrawalRequestForUser({ withdrawalRequestId });
@@ -315,14 +409,6 @@ export async function completeWithdrawalRequest({ withdrawalRequestId }) {
 
       assertValidWithdrawalTransition(refreshed.status, WITHDRAWAL_STATUSES.COMPLETED);
 
-      const payoutResult = await executeWithdrawalPayout(refreshed);
-      if (!payoutResult?.ok) {
-        const error = new Error('Payout execution failed');
-        error.status = 502;
-        error.code = 'PAYOUT_EXECUTION_FAILED';
-        throw error;
-      }
-
       const completed = await completeRlusdWithdrawalHold({ userId: refreshed.user_id, amount: Number(refreshed.amount), referenceId: refreshed.id });
 
       const request = await updateWithdrawalRequest({
@@ -331,14 +417,23 @@ export async function completeWithdrawalRequest({ withdrawalRequestId }) {
           status: WITHDRAWAL_STATUSES.COMPLETED,
           completed_at: nowIso(),
           failure_reason: null,
-          reference_note: refreshed.reference_note || payoutResult.externalReference || null
+          payout_status: 'completed',
+          payout_status_detail: 'manual_execution_confirmed',
+          payout_completed_at: nowIso(),
+          payout_failed_at: null,
+          payout_reference: normalizeOptionalNote(payoutReference, { max: 180 }) || refreshed.payout_reference || null,
+          payout_external_id: normalizeOptionalNote(externalId, { max: 180 }) || refreshed.payout_external_id || null,
+          payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 }) || refreshed.payout_operator_note || null
         }
       });
 
       await logEvent({
         userId: refreshed.user_id,
         eventType: 'rlusd_withdrawal_completed',
-        context: { withdrawalRequestId: refreshed.id, idempotencyKey: refreshed.idempotency_key || null, action: 'complete', from: refreshed.status, to: WITHDRAWAL_STATUSES.COMPLETED },
+        context: buildPayoutContext(request, 'complete', {
+          from: refreshed.status,
+          to: WITHDRAWAL_STATUSES.COMPLETED
+        }),
         source: 'backend'
       });
 
@@ -347,7 +442,7 @@ export async function completeWithdrawalRequest({ withdrawalRequestId }) {
   });
 }
 
-export async function failWithdrawalRequest({ withdrawalRequestId, failureReason = null }) {
+export async function failWithdrawalRequest({ withdrawalRequestId, failureReason = null, operatorNote = null }) {
   assertWithdrawalsFeatureEnabled();
 
   const current = await getWithdrawalRequestForUser({ withdrawalRequestId });
@@ -375,14 +470,22 @@ export async function failWithdrawalRequest({ withdrawalRequestId, failureReason
         updates: {
           status: WITHDRAWAL_STATUSES.FAILED,
           failure_reason: (String(failureReason || '').trim() || 'Retiro fallido').slice(0, 300),
-          completed_at: null
+          completed_at: null,
+          payout_status: 'failed',
+          payout_status_detail: 'manual_execution_failed',
+          payout_failed_at: nowIso(),
+          payout_completed_at: null,
+          payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 }) || refreshed.payout_operator_note || null
         }
       });
 
       await logEvent({
         userId: refreshed.user_id,
         eventType: 'rlusd_withdrawal_failed',
-        context: { withdrawalRequestId: refreshed.id, idempotencyKey: refreshed.idempotency_key || null, action: 'fail', from: refreshed.status, to: WITHDRAWAL_STATUSES.FAILED },
+        context: buildPayoutContext(request, 'fail', {
+          from: refreshed.status,
+          to: WITHDRAWAL_STATUSES.FAILED
+        }),
         source: 'backend'
       });
 

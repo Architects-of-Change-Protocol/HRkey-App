@@ -25,6 +25,10 @@ function errorResponse(req, res, action, error, extra = {}) {
     withdrawalRequestId: req.params?.id || null,
     idempotencyKey: req.get('Idempotency-Key') || null,
     action,
+    payoutRail: req.body?.payoutRail || null,
+    payoutProvider: req.body?.payoutProvider || null,
+    destinationType: req.body?.destinationType || null,
+    normalizedDestination: req.body?.destinationRef || null,
     ...extra,
     error: error.message,
     code: error.code
@@ -113,7 +117,12 @@ export async function postProcessWithdrawalRequest(req, res) {
   try {
     if (!ensureAdminOrSuperadmin(req, res)) return;
     assertWithdrawalsFeatureEnabled();
-    const result = await markWithdrawalProcessing({ withdrawalRequestId: req.params?.id });
+    const result = await markWithdrawalProcessing({
+      withdrawalRequestId: req.params?.id,
+      payoutRail: req.body?.payoutRail || null,
+      payoutProvider: req.body?.payoutProvider || null,
+      operatorNote: req.body?.operatorNote || null
+    });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(req, res, 'process', error);
@@ -124,7 +133,12 @@ export async function postCompleteWithdrawalRequest(req, res) {
   try {
     if (!ensureAdminOrSuperadmin(req, res)) return;
     assertWithdrawalsFeatureEnabled();
-    const result = await completeWithdrawalRequest({ withdrawalRequestId: req.params?.id });
+    const result = await completeWithdrawalRequest({
+      withdrawalRequestId: req.params?.id,
+      payoutReference: req.body?.payoutReference || null,
+      externalId: req.body?.externalId || null,
+      operatorNote: req.body?.operatorNote || null
+    });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(req, res, 'complete', error);
@@ -135,7 +149,11 @@ export async function postFailWithdrawalRequest(req, res) {
   try {
     if (!ensureAdminOrSuperadmin(req, res)) return;
     assertWithdrawalsFeatureEnabled();
-    const result = await failWithdrawalRequest({ withdrawalRequestId: req.params?.id, failureReason: req.body?.failureReason || null });
+    const result = await failWithdrawalRequest({
+      withdrawalRequestId: req.params?.id,
+      failureReason: req.body?.failureReason || req.body?.reason || null,
+      operatorNote: req.body?.operatorNote || null
+    });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(req, res, 'fail', error);
