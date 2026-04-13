@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import helmet from 'helmet';
 import { createRateLimiter } from './middleware/rateLimit.js';
+import { payoutCallbackRateLimit } from './middleware/payoutCallbackRateLimit.js';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import Stripe from 'stripe';
@@ -1348,6 +1349,7 @@ app.post('/api/rlusd/withdrawals/:id/process', requireAuth, rlusdWithdrawalContr
 app.post('/api/rlusd/withdrawals/:id/complete', requireAuth, rlusdWithdrawalController.postCompleteWithdrawalRequest);
 app.post('/api/rlusd/withdrawals/:id/fail', requireAuth, rlusdWithdrawalController.postFailWithdrawalRequest);
 app.post('/api/rlusd/withdrawals/:id/cancel', requireAuth, rlusdWithdrawalController.postCancelWithdrawalRequest);
+app.post('/api/internal/rlusd/withdrawals/provider-callback', payoutCallbackRateLimit, rlusdWithdrawalController.postProviderWithdrawalCallback);
 
 /**
  * GET /api/reference-pack/:identifier

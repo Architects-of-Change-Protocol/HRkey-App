@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { hashCanonicalPayload } from '../utils/canonicalPayload.js';
 import { logEvent } from './analytics/eventTracker.js';
 import {
   completeRlusdWithdrawalHold,
@@ -71,6 +72,56 @@ function buildPayoutContext(request, action, extra = {}) {
   };
 }
 
+async function logPayoutEvent({
+  withdrawalRequest,
+  eventType,
+  providerStatus = null,
+  payload = null,
+  externalId = null,
+  payoutReference = null,
+  operatorId = null,
+  providerEventId = null,
+  callbackSignatureFingerprint = null
+}) {
+  const payloadHash = hashCanonicalPayload(payload || {
+    withdrawalRequestId: withdrawalRequest.id,
+    payoutStatus: withdrawalRequest.payout_status,
+    status: withdrawalRequest.status,
+    providerStatus
+  });
+
+  await supabase
+    .from('rlusd_payout_events')
+    .insert([{
+      payout_request_id: withdrawalRequest.id,
+      event_type: eventType,
+      payout_rail: withdrawalRequest.payout_rail || null,
+      payout_provider: withdrawalRequest.payout_provider || null,
+      provider_status: providerStatus,
+      external_id: externalId || withdrawalRequest.payout_external_id || null,
+      payout_reference: payoutReference || withdrawalRequest.payout_reference || null,
+      payload_hash: payloadHash,
+      payload_snapshot: payload || null,
+      operator_id: operatorId || null,
+      provider_event_id: providerEventId || null,
+      callback_signature_fingerprint: callbackSignatureFingerprint || null,
+      first_seen_at: nowIso(),
+      last_seen_at: nowIso(),
+      created_at: nowIso()
+    }]);
+}
+
+function normalizeProviderCallbackStatus(providerStatus) {
+  const normalized = String(providerStatus || '').trim().toLowerCase();
+  if (['completed', 'success', 'succeeded', 'paid'].includes(normalized)) {
+    return { target: WITHDRAWAL_STATUSES.COMPLETED, payoutStatus: 'completed', detail: 'provider_confirmed_completion' };
+  }
+  if (['failed', 'error', 'rejected'].includes(normalized)) {
+    return { target: WITHDRAWAL_STATUSES.FAILED, payoutStatus: 'failed', detail: 'provider_reported_failure' };
+  }
+  return { target: WITHDRAWAL_STATUSES.PROCESSING, payoutStatus: 'provider_pending', detail: 'provider_pending_update' };
+}
+
 export function assertWithdrawalsFeatureEnabled() {
   if (!withdrawalsFeatureEnabled()) {
     const error = new Error('RLUSD withdrawals feature is currently disabled');
@@ -121,6 +172,40 @@ async function getWithdrawalRequestForUser({ withdrawalRequestId, userId = null 
   return data;
 }
 
+async function getWithdrawalRequestByProviderExternalId({ payoutProvider, externalId }) {
+  const { data, error } = await supabase
+    .from('rlusd_withdrawal_requests')
+    .select('*')
+    .eq('payout_provider', payoutProvider)
+    .eq('payout_external_id', externalId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getExistingCallbackEvent({ provider, eventId }) {
+  const { data, error } = await supabase
+    .from('rlusd_payout_events')
+    .select('*')
+    .eq('event_type', 'provider_callback_received')
+    .eq('payout_provider', provider)
+    .eq('provider_event_id', eventId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function updateCallbackEventLastSeen(eventId) {
+  const { error } = await supabase
+    .from('rlusd_payout_events')
+    .update({ last_seen_at: nowIso() })
+    .eq('id', eventId);
+
+  if (error) throw error;
+}
+
 async function updateWithdrawalRequest({ withdrawalRequestId, updates }) {
   const { data, error } = await supabase
     .from('rlusd_withdrawal_requests')
@@ -130,6 +215,26 @@ async function updateWithdrawalRequest({ withdrawalRequestId, updates }) {
     .single();
 
   if (error) throw error;
+  return data;
+}
+
+async function updateWithdrawalRequestWithExpectedStatus({ withdrawalRequestId, expectedStatus, updates }) {
+  const { data, error } = await supabase
+    .from('rlusd_withdrawal_requests')
+    .update({ ...updates, updated_at: nowIso() })
+    .eq('id', withdrawalRequestId)
+    .eq('status', expectedStatus)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  if (!data) {
+    const conflict = new Error('Withdrawal transition conflict');
+    conflict.status = 409;
+    conflict.code = 'WITHDRAWAL_CONCURRENT_TRANSITION';
+    throw conflict;
+  }
+
   return data;
 }
 
@@ -222,7 +327,8 @@ export async function createWithdrawalRequest({ userId, idempotencyKey, ...rawIn
             idempotency_key: safeKey,
             payload_fingerprint: payloadFingerprint,
             created_at: nowIso(),
-            updated_at: nowIso()
+            updated_at: nowIso(),
+            last_transition_at: nowIso()
           }])
           .select('*')
           .single();
@@ -241,6 +347,13 @@ export async function createWithdrawalRequest({ userId, idempotencyKey, ...rawIn
       }
 
       const holdResult = await holdRlusdBalanceForWithdrawal({ userId, amount: quote.amount, referenceId: request.id });
+
+      await logPayoutEvent({
+        withdrawalRequest: request,
+        eventType: 'withdrawal_requested',
+        providerStatus: request.payout_status,
+        payload: { source: 'create', quote, destinationType: request.destination_type }
+      });
 
       await logEvent({
         userId,
@@ -302,8 +415,16 @@ export async function cancelWithdrawalRequest({ userId, withdrawalRequestId }) {
           failure_reason: null,
           completed_at: null,
           payout_status: 'cancelled',
-          payout_status_detail: 'withdrawal_cancelled_by_user'
+          payout_status_detail: 'withdrawal_cancelled_by_user',
+          last_transition_at: nowIso()
         }
+      });
+
+      await logPayoutEvent({
+        withdrawalRequest: request,
+        eventType: 'withdrawal_cancelled',
+        providerStatus: request.payout_status,
+        payload: { from: current.status, to: request.status }
       });
 
       await logEvent({
@@ -321,7 +442,7 @@ export async function cancelWithdrawalRequest({ userId, withdrawalRequestId }) {
   });
 }
 
-export async function markWithdrawalProcessing({ withdrawalRequestId, payoutRail = null, payoutProvider = null, operatorNote = null }) {
+export async function markWithdrawalProcessing({ withdrawalRequestId, payoutRail = null, payoutProvider = null, operatorNote = null, operatorId = null }) {
   assertWithdrawalsFeatureEnabled();
 
   const current = await getWithdrawalRequestForUser({ withdrawalRequestId });
@@ -345,8 +466,9 @@ export async function markWithdrawalProcessing({ withdrawalRequestId, payoutRail
 
   assertSinpeRailEnabled(route.payoutRail);
 
-  const requestInProcessing = await updateWithdrawalRequest({
+  const requestInProcessing = await updateWithdrawalRequestWithExpectedStatus({
     withdrawalRequestId,
+    expectedStatus: current.status,
     updates: {
       status: WITHDRAWAL_STATUSES.PROCESSING,
       payout_rail: route.payoutRail,
@@ -354,23 +476,43 @@ export async function markWithdrawalProcessing({ withdrawalRequestId, payoutRail
       payout_status: 'processing',
       payout_status_detail: 'executor_started',
       payout_processed_at: nowIso(),
-      payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 })
+      payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 }),
+      processed_by: operatorId,
+      last_transition_at: nowIso()
     }
   });
 
   const payoutResult = await executeWithdrawalPayout(requestInProcessing, route);
-  const request = await updateWithdrawalRequest({
-    withdrawalRequestId,
-    updates: {
-      payout_rail: payoutResult.rail || route.payoutRail,
-      payout_provider: payoutResult.provider || route.payoutProvider,
-      payout_reference: payoutResult.reference || null,
-      payout_external_id: payoutResult.externalId || null,
-      payout_status: payoutResult.status || 'processing',
-      payout_status_detail: payoutResult.statusDetail || null,
-      payout_processed_at: payoutResult.processedAt || nowIso(),
-      payout_destination_snapshot: payoutResult.destinationSnapshot ? JSON.stringify(payoutResult.destinationSnapshot) : (requestInProcessing.payout_destination_snapshot || null)
-    }
+  let request;
+  try {
+    request = await updateWithdrawalRequestWithExpectedStatus({
+      withdrawalRequestId,
+      expectedStatus: WITHDRAWAL_STATUSES.PROCESSING,
+      updates: {
+        payout_rail: payoutResult.rail || route.payoutRail,
+        payout_provider: payoutResult.provider || route.payoutProvider,
+        payout_reference: payoutResult.reference || null,
+        payout_external_id: payoutResult.externalId || null,
+        payout_status: payoutResult.status || 'processing',
+        payout_status_detail: payoutResult.statusDetail || null,
+        payout_processed_at: payoutResult.processedAt || nowIso(),
+        payout_destination_snapshot: payoutResult.destinationSnapshot ? JSON.stringify(payoutResult.destinationSnapshot) : (requestInProcessing.payout_destination_snapshot || null)
+      }
+    });
+  } catch (error) {
+    if (error.code !== 'WITHDRAWAL_CONCURRENT_TRANSITION') throw error;
+    const refreshed = await getWithdrawalRequestForUser({ withdrawalRequestId });
+    return { request: refreshed, alreadyProcessing: false, concurrentTransition: true };
+  }
+
+  await logPayoutEvent({
+    withdrawalRequest: request,
+    eventType: 'withdrawal_processing',
+    providerStatus: request.payout_status,
+    externalId: request.payout_external_id,
+    payoutReference: request.payout_reference,
+    payload: payoutResult,
+    operatorId
   });
 
   await logEvent({
@@ -388,7 +530,7 @@ export async function markWithdrawalProcessing({ withdrawalRequestId, payoutRail
   return { request, alreadyProcessing: false };
 }
 
-export async function completeWithdrawalRequest({ withdrawalRequestId, payoutReference = null, externalId = null, operatorNote = null }) {
+export async function completeWithdrawalRequest({ withdrawalRequestId, payoutReference = null, externalId = null, operatorNote = null, operatorId = null }) {
   assertWithdrawalsFeatureEnabled();
 
   const current = await getWithdrawalRequestForUser({ withdrawalRequestId });
@@ -423,8 +565,20 @@ export async function completeWithdrawalRequest({ withdrawalRequestId, payoutRef
           payout_failed_at: null,
           payout_reference: normalizeOptionalNote(payoutReference, { max: 180 }) || refreshed.payout_reference || null,
           payout_external_id: normalizeOptionalNote(externalId, { max: 180 }) || refreshed.payout_external_id || null,
-          payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 }) || refreshed.payout_operator_note || null
+          payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 }) || refreshed.payout_operator_note || null,
+          completed_by: operatorId,
+          last_transition_at: nowIso()
         }
+      });
+
+      await logPayoutEvent({
+        withdrawalRequest: request,
+        eventType: 'withdrawal_completed',
+        providerStatus: request.payout_status,
+        externalId: request.payout_external_id,
+        payoutReference: request.payout_reference,
+        payload: { from: refreshed.status, to: request.status },
+        operatorId
       });
 
       await logEvent({
@@ -442,7 +596,7 @@ export async function completeWithdrawalRequest({ withdrawalRequestId, payoutRef
   });
 }
 
-export async function failWithdrawalRequest({ withdrawalRequestId, failureReason = null, operatorNote = null }) {
+export async function failWithdrawalRequest({ withdrawalRequestId, failureReason = null, operatorNote = null, operatorId = null }) {
   assertWithdrawalsFeatureEnabled();
 
   const current = await getWithdrawalRequestForUser({ withdrawalRequestId });
@@ -475,8 +629,20 @@ export async function failWithdrawalRequest({ withdrawalRequestId, failureReason
           payout_status_detail: 'manual_execution_failed',
           payout_failed_at: nowIso(),
           payout_completed_at: null,
-          payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 }) || refreshed.payout_operator_note || null
+          payout_operator_note: normalizeOptionalNote(operatorNote, { max: 500 }) || refreshed.payout_operator_note || null,
+          failed_by: operatorId,
+          last_transition_at: nowIso()
         }
+      });
+
+      await logPayoutEvent({
+        withdrawalRequest: request,
+        eventType: 'withdrawal_failed',
+        providerStatus: request.payout_status,
+        externalId: request.payout_external_id,
+        payoutReference: request.payout_reference,
+        payload: { from: refreshed.status, to: request.status, failureReason },
+        operatorId
       });
 
       await logEvent({
@@ -494,6 +660,169 @@ export async function failWithdrawalRequest({ withdrawalRequestId, failureReason
   });
 }
 
+export async function processWithdrawalProviderCallback({
+  withdrawalRequestId = null,
+  payoutProvider,
+  payoutRail = null,
+  providerStatus,
+  externalId,
+  payoutReference = null,
+  payload = null,
+  operatorId = null,
+  providerEventId = null,
+  callbackSignatureFingerprint = null,
+  callbackPayloadHash = null
+}) {
+  assertWithdrawalsFeatureEnabled();
+
+  const normalizedProvider = String(payoutProvider || '').trim().toLowerCase();
+  const normalizedExternalId = normalizeOptionalNote(externalId, { max: 180 });
+  const callbackStatus = normalizeProviderCallbackStatus(providerStatus);
+
+  if (!normalizedProvider || !normalizedExternalId || !providerEventId) {
+    const error = new Error('payoutProvider, externalId and providerEventId are required');
+    error.status = 400;
+    error.code = 'INVALID_PROVIDER_CALLBACK';
+    throw error;
+  }
+
+  const canonicalPayloadHash = callbackPayloadHash || hashCanonicalPayload(payload || {});
+  const existingCallbackEvent = await getExistingCallbackEvent({ provider: normalizedProvider, eventId: providerEventId });
+  if (existingCallbackEvent) {
+    await updateCallbackEventLastSeen(existingCallbackEvent.id);
+
+    if (existingCallbackEvent.payload_hash !== canonicalPayloadHash) {
+      const conflict = new Error('Conflicting replay detected for provider callback event');
+      conflict.status = 409;
+      conflict.code = 'PAYOUT_CALLBACK_REPLAY_CONFLICT';
+      throw conflict;
+    }
+
+    const replayRequest = await getWithdrawalRequestForUser({ withdrawalRequestId: existingCallbackEvent.payout_request_id });
+    return { request: replayRequest, duplicate: true, action: 'replay_exact' };
+  }
+
+  let request = null;
+  if (withdrawalRequestId) {
+    request = await getWithdrawalRequestForUser({ withdrawalRequestId });
+  }
+  if (!request) {
+    request = await getWithdrawalRequestByProviderExternalId({
+      payoutProvider: normalizedProvider,
+      externalId: normalizedExternalId
+    });
+  }
+
+  if (!request) {
+    const error = new Error('Withdrawal request not found for provider callback');
+    error.status = 404;
+    error.code = 'WITHDRAWAL_NOT_FOUND';
+    throw error;
+  }
+
+  await logPayoutEvent({
+    withdrawalRequest: request,
+    eventType: 'provider_callback_received',
+    providerStatus: String(providerStatus || '').toLowerCase(),
+    externalId: normalizedExternalId,
+    payoutReference,
+    payload,
+    operatorId,
+    providerEventId,
+    callbackSignatureFingerprint
+  });
+
+  if ([WITHDRAWAL_STATUSES.COMPLETED, WITHDRAWAL_STATUSES.FAILED, WITHDRAWAL_STATUSES.CANCELLED].includes(request.status)) {
+    await logPayoutEvent({
+      withdrawalRequest: request,
+      eventType: 'provider_callback_duplicate',
+      providerStatus: String(providerStatus || '').toLowerCase(),
+      externalId: normalizedExternalId,
+      payoutReference,
+      payload,
+      operatorId,
+      providerEventId,
+      callbackSignatureFingerprint
+    });
+
+    return { request, duplicate: true, action: 'noop_terminal' };
+  }
+
+  if (callbackStatus.target === WITHDRAWAL_STATUSES.COMPLETED) {
+    const result = await completeWithdrawalRequest({
+      withdrawalRequestId: request.id,
+      payoutReference,
+      externalId: normalizedExternalId,
+      operatorNote: 'Provider callback completion',
+      operatorId
+    });
+
+    await logPayoutEvent({
+      withdrawalRequest: result.request,
+      eventType: 'provider_callback_completed',
+      providerStatus: String(providerStatus || '').toLowerCase(),
+      externalId: normalizedExternalId,
+      payoutReference,
+      payload,
+      operatorId,
+      providerEventId,
+      callbackSignatureFingerprint
+    });
+
+    return { request: result.request, duplicate: false, action: 'completed' };
+  }
+
+  if (callbackStatus.target === WITHDRAWAL_STATUSES.FAILED) {
+    const result = await failWithdrawalRequest({
+      withdrawalRequestId: request.id,
+      failureReason: 'Provider callback failure',
+      operatorNote: 'Provider callback failure',
+      operatorId
+    });
+
+    await logPayoutEvent({
+      withdrawalRequest: result.request,
+      eventType: 'provider_callback_failed',
+      providerStatus: String(providerStatus || '').toLowerCase(),
+      externalId: normalizedExternalId,
+      payoutReference,
+      payload,
+      operatorId,
+      providerEventId,
+      callbackSignatureFingerprint
+    });
+
+    return { request: result.request, duplicate: false, action: 'failed' };
+  }
+
+  const updated = await updateWithdrawalRequest({
+    withdrawalRequestId: request.id,
+    updates: {
+      status: WITHDRAWAL_STATUSES.PROCESSING,
+      payout_rail: payoutRail || request.payout_rail,
+      payout_provider: normalizedProvider,
+      payout_external_id: normalizedExternalId,
+      payout_reference: normalizeOptionalNote(payoutReference, { max: 180 }) || request.payout_reference || null,
+      payout_status: callbackStatus.payoutStatus,
+      payout_status_detail: callbackStatus.detail
+    }
+  });
+
+  await logPayoutEvent({
+    withdrawalRequest: updated,
+    eventType: 'provider_callback_processing',
+    providerStatus: String(providerStatus || '').toLowerCase(),
+    externalId: normalizedExternalId,
+    payoutReference,
+    payload,
+    operatorId,
+    providerEventId,
+    callbackSignatureFingerprint
+  });
+
+  return { request: updated, duplicate: false, action: 'processing' };
+}
+
 export default {
   getWithdrawalQuote,
   createWithdrawalRequest,
@@ -502,5 +831,6 @@ export default {
   markWithdrawalProcessing,
   completeWithdrawalRequest,
   failWithdrawalRequest,
+  processWithdrawalProviderCallback,
   assertWithdrawalsFeatureEnabled
 };

@@ -2,10 +2,14 @@ import { jest } from '@jest/globals';
 import request from 'supertest';
 import { createSupabaseMock, mockSuccess } from '../utils/supabase-mock';
 import { buildWithdrawalPayloadFingerprint } from '../../services/rlusdWithdrawal.utils.js';
+import { buildPayoutCallbackSignature } from '../../services/payoutCallbacks.security.js';
+import { resetPayoutCallbackRateLimit } from '../../middleware/payoutCallbackRateLimit.js';
 
 process.env.ALLOW_TEST_AUTH_BYPASS = 'true';
+process.env.PAYOUT_CALLBACK_SECRET_MOCK_GLOBAL_FIAT = 'test-callback-secret';
+process.env.PAYOUT_ALLOW_NON_PROD_ADAPTERS = 'true';
 
-const { supabase, setTableResponses } = createSupabaseMock();
+const { supabase, tables, setTableResponses } = createSupabaseMock();
 
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => supabase)
@@ -21,6 +25,12 @@ describe('RLUSD conversion API', () => {
   beforeAll(async () => {
     ({ app } = await import('../../app.js'));
   });
+
+  beforeEach(() => {
+    resetPayoutCallbackRateLimit();
+    process.env.PAYOUT_CALLBACK_RATE_LIMIT_MAX = '60';
+    process.env.PAYOUT_CALLBACK_RATE_LIMIT_WINDOW_MS = '60000';
+  });
   const authHeaders = {
     'x-test-user-id': '00000000-0000-4000-8000-000000000001',
     'x-test-user-email': 'candidate@example.com',
@@ -31,6 +41,27 @@ describe('RLUSD conversion API', () => {
     ...authHeaders,
     'x-test-user-role': 'admin'
   };
+
+  function signedCallbackHeaders(payload, overrides = {}) {
+    const timestamp = overrides.timestamp ?? Math.floor(Date.now() / 1000);
+    const provider = overrides.provider || 'mock_global_fiat';
+    const eventId = overrides.eventId || 'evt-test-1';
+    const signature = buildPayoutCallbackSignature({
+      provider,
+      timestamp,
+      eventId,
+      payload,
+      secret: process.env.PAYOUT_CALLBACK_SECRET_MOCK_GLOBAL_FIAT
+    });
+
+    return {
+      'x-payout-provider': provider,
+      'x-payout-event-id': eventId,
+      'x-payout-timestamp': String(timestamp),
+      'x-payout-signature': signature,
+      ...overrides.headers
+    };
+  }
 
   test('quote válido', async () => {
     const response = await request(app)
@@ -505,6 +536,175 @@ describe('RLUSD conversion API', () => {
     expect(response.status).toBe(200);
     expect(response.body.request.status).toBe('completed');
     expect(response.body.balance.reservedBalance).toBe(0);
+  });
+
+
+
+  test('provider callback completa retiro e ignora callback duplicado', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [
+        mockSuccess({ id: 'wd-cb-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'processing', payout_provider: 'mock_global_fiat', payout_external_id: 'ext-cb-1' }),
+        mockSuccess({ id: 'wd-cb-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'processing', payout_provider: 'mock_global_fiat', payout_external_id: 'ext-cb-1' }),
+        mockSuccess({ id: 'wd-cb-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'processing', payout_provider: 'mock_global_fiat', payout_external_id: 'ext-cb-1' }),
+        mockSuccess({ id: 'wd-cb-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'completed', payout_provider: 'mock_global_fiat', payout_external_id: 'ext-cb-1' })
+      ],
+      singleResponses: [
+        mockSuccess({ id: 'wd-cb-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'completed', payout_provider: 'mock_global_fiat', payout_external_id: 'ext-cb-1' })
+      ]
+    });
+
+    setTableResponses('rlusd_balances', {
+      maybeSingleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 5 }), mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 0 })],
+      singleResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 0 })],
+      upsertResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 0 })]
+    });
+
+    setTableResponses('rlusd_transactions', {
+      singleResponses: [mockSuccess({ id: 'rltx-cb-complete-1', type: 'withdrawal_complete' })]
+    });
+
+    const callbackPayload = { provider: 'mock_global_fiat', externalId: 'ext-cb-1', status: 'completed', payoutReference: 'provider-ref-1' };
+    const first = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set(signedCallbackHeaders(callbackPayload, { eventId: 'evt-cb-1' }))
+      .send(callbackPayload);
+
+    expect(first.status).toBe(200);
+    expect(first.body.action).toBe('completed');
+
+    const second = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set(signedCallbackHeaders(callbackPayload, { eventId: 'evt-cb-1' }))
+      .send(callbackPayload);
+
+    expect(second.status).toBe(200);
+    expect(second.body.duplicate).toBe(true);
+
+    expect(tables.rlusd_transactions.api.single).toHaveBeenCalledTimes(1);
+  });
+
+
+
+  test('callback con firma inválida es rechazado', async () => {
+    const payload = { provider: 'mock_global_fiat', externalId: 'ext-cb-2', status: 'completed' };
+    const response = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set({
+        ...signedCallbackHeaders(payload, { eventId: 'evt-cb-invalid-sign' }),
+        'x-payout-signature': 'deadbeef'
+      })
+      .send(payload);
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('PAYOUT_SIGNATURE_INVALID');
+  });
+
+  test('callback con timestamp expirado es rechazado', async () => {
+    const payload = { provider: 'mock_global_fiat', externalId: 'ext-cb-3', status: 'completed' };
+    const oldTimestamp = Math.floor(Date.now() / 1000) - 3600;
+    const response = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set(signedCallbackHeaders(payload, { eventId: 'evt-cb-expired', timestamp: oldTimestamp }))
+      .send(payload);
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('PAYOUT_TIMESTAMP_EXPIRED');
+  });
+
+  test('callback con provider desconocido es rechazado', async () => {
+    const payload = { provider: 'unknown_provider', externalId: 'ext-cb-4', status: 'completed' };
+    const response = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set({
+        'x-payout-provider': 'unknown_provider',
+        'x-payout-event-id': 'evt-cb-unknown',
+        'x-payout-timestamp': String(Math.floor(Date.now() / 1000)),
+        'x-payout-signature': 'bead'
+      })
+      .send(payload);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('UNKNOWN_PAYOUT_PROVIDER');
+  });
+
+  test('callback replay conflictivo es rechazado', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [mockSuccess({ id: 'wd-cb-5', user_id: authHeaders['x-test-user-id'], amount: 2, status: 'completed', payout_provider: 'mock_global_fiat', payout_external_id: 'ext-cb-5' })]
+    });
+    setTableResponses('rlusd_payout_events', {
+      maybeSingleResponses: [mockSuccess({ id: 'evt-row-1', payout_request_id: 'wd-cb-5', payload_hash: 'not-the-same' })],
+      updateResponses: [mockSuccess({ id: 'evt-row-1' })]
+    });
+
+    const payload = { provider: 'mock_global_fiat', externalId: 'ext-cb-5', status: 'completed' };
+    const response = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set(signedCallbackHeaders(payload, { eventId: 'evt-cb-conflict' }))
+      .send(payload);
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('PAYOUT_CALLBACK_REPLAY_CONFLICT');
+  });
+
+
+
+  test('rate limit básico en callback endpoint', async () => {
+    process.env.PAYOUT_CALLBACK_RATE_LIMIT_WINDOW_MS = '60000';
+    process.env.PAYOUT_CALLBACK_RATE_LIMIT_MAX = '1';
+
+    const payload = { provider: 'mock_global_fiat', externalId: 'ext-rate-1', status: 'completed' };
+
+    await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set(signedCallbackHeaders(payload, { eventId: 'evt-rate-1' }))
+      .send(payload);
+
+    const second = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set(signedCallbackHeaders(payload, { eventId: 'evt-rate-2' }))
+      .send(payload);
+
+    expect(second.status).toBe(429);
+    expect(second.body.error).toBe('RATE_LIMITED');
+
+    process.env.PAYOUT_CALLBACK_RATE_LIMIT_MAX = '60';
+  });
+
+  test('callback provider sin secret configurado falla cerrado', async () => {
+    const prev = process.env.PAYOUT_CALLBACK_SECRET_MOCK_GLOBAL_FIAT;
+    delete process.env.PAYOUT_CALLBACK_SECRET_MOCK_GLOBAL_FIAT;
+
+    const payload = { provider: 'mock_global_fiat', externalId: 'ext-cb-6', status: 'completed' };
+    const response = await request(app)
+      .post('/api/internal/rlusd/withdrawals/provider-callback')
+      .set({
+        'x-payout-provider': 'mock_global_fiat',
+        'x-payout-event-id': 'evt-cb-nosecret',
+        'x-payout-timestamp': String(Math.floor(Date.now() / 1000)),
+        'x-payout-signature': 'bead'
+      })
+      .send(payload);
+
+    expect(response.status).toBe(503);
+    expect(response.body.error).toBe('PAYOUT_CALLBACK_SECRET_NOT_CONFIGURED');
+    process.env.PAYOUT_CALLBACK_SECRET_MOCK_GLOBAL_FIAT = prev;
+  });
+
+  test('rechaza transición inválida fail luego de completed', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [
+        mockSuccess({ id: 'wd-invalid-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'completed' }),
+        mockSuccess({ id: 'wd-invalid-1', user_id: authHeaders['x-test-user-id'], amount: 5, status: 'completed' })
+      ]
+    });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/wd-invalid-1/fail')
+      .set(adminHeaders)
+      .send({ failureReason: 'should not fail after completed' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('INVALID_STATUS_TRANSITION');
   });
 
   test('list withdrawals funciona', async () => {

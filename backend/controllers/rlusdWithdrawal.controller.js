@@ -1,4 +1,5 @@
 import logger from '../logger.js';
+import { validatePayoutCallbackAuth } from '../services/payoutCallbacks.security.js';
 import {
   assertWithdrawalsFeatureEnabled,
   cancelWithdrawalRequest,
@@ -7,7 +8,8 @@ import {
   failWithdrawalRequest,
   getWithdrawalQuote,
   listWithdrawalRequests,
-  markWithdrawalProcessing
+  markWithdrawalProcessing,
+  processWithdrawalProviderCallback
 } from '../services/rlusdWithdrawal.service.js';
 
 function ensureAdminOrSuperadmin(req, res) {
@@ -121,7 +123,8 @@ export async function postProcessWithdrawalRequest(req, res) {
       withdrawalRequestId: req.params?.id,
       payoutRail: req.body?.payoutRail || null,
       payoutProvider: req.body?.payoutProvider || null,
-      operatorNote: req.body?.operatorNote || null
+      operatorNote: req.body?.operatorNote || null,
+      operatorId: req.user?.id || null
     });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
@@ -137,7 +140,8 @@ export async function postCompleteWithdrawalRequest(req, res) {
       withdrawalRequestId: req.params?.id,
       payoutReference: req.body?.payoutReference || null,
       externalId: req.body?.externalId || null,
-      operatorNote: req.body?.operatorNote || null
+      operatorNote: req.body?.operatorNote || null,
+      operatorId: req.user?.id || null
     });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
@@ -152,11 +156,47 @@ export async function postFailWithdrawalRequest(req, res) {
     const result = await failWithdrawalRequest({
       withdrawalRequestId: req.params?.id,
       failureReason: req.body?.failureReason || req.body?.reason || null,
-      operatorNote: req.body?.operatorNote || null
+      operatorNote: req.body?.operatorNote || null,
+      operatorId: req.user?.id || null
     });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(req, res, 'fail', error);
+  }
+}
+
+export async function postProviderWithdrawalCallback(req, res) {
+  try {
+    assertWithdrawalsFeatureEnabled();
+
+    const auth = validatePayoutCallbackAuth({ headers: req.headers, body: req.body || {} });
+    const result = await processWithdrawalProviderCallback({
+      withdrawalRequestId: req.body?.withdrawalRequestId || req.body?.payoutRequestId || null,
+      payoutProvider: auth.provider,
+      payoutRail: req.body?.payoutRail || req.body?.rail || null,
+      providerStatus: req.body?.providerStatus || req.body?.status || null,
+      externalId: req.body?.externalId || req.body?.providerExternalId || null,
+      payoutReference: req.body?.payoutReference || null,
+      payload: req.body || null,
+      providerEventId: auth.eventId,
+      callbackSignatureFingerprint: auth.signatureFingerprint,
+      callbackPayloadHash: auth.payloadHash,
+      operatorId: null
+    });
+
+    logger.info('Payout callback processed', {
+      requestId: req.requestId,
+      provider: auth.provider,
+      providerEventId: auth.eventId,
+      payloadHashPrefix: auth.payloadHash.slice(0, 12),
+      duplicate: Boolean(result.duplicate),
+      action: result.action,
+      withdrawalRequestId: result.request?.id || null
+    });
+
+    return res.status(200).json({ ok: true, ...result });
+  } catch (error) {
+    return errorResponse(req, res, 'provider_callback', error);
   }
 }
 
@@ -167,5 +207,6 @@ export default {
   postCancelWithdrawalRequest,
   postProcessWithdrawalRequest,
   postCompleteWithdrawalRequest,
-  postFailWithdrawalRequest
+  postFailWithdrawalRequest,
+  postProviderWithdrawalCallback
 };
