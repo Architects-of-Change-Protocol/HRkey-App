@@ -225,7 +225,7 @@ describe('RLUSD conversion API', () => {
     const response = await request(app)
       .post('/api/aoc/convert/requests/conv-cancel-1/cancel')
       .set(authHeaders)
-      .send({});
+      .send({ payoutReference: 'sinpe-ref-123', externalId: 'bank-op-1' });
 
     expect(response.status).toBe(200);
     expect(response.body.request.status).toBe('cancelled');
@@ -324,7 +324,7 @@ describe('RLUSD conversion API', () => {
       upsertResponses: [mockSuccess({ user_id: authHeaders['x-test-user-id'], rlusd_balance: 0, rlusd_reserved_balance: 10 })]
     });
     setTableResponses('rlusd_withdrawal_requests', {
-      singleResponses: [mockSuccess({ id: 'wd-1', user_id: authHeaders['x-test-user-id'], amount: 10, fee_amount: 0, net_amount: 10, status: 'pending_review', destination_type: 'wallet', created_at: '2026-04-03T00:00:00.000Z' })]
+      singleResponses: [mockSuccess({ id: 'wd-1', user_id: authHeaders['x-test-user-id'], amount: 10, fee_amount: 0, net_amount: 10, status: 'pending_review', destination_type: 'sinpe_mobile', destination_ref: '+50688887777', payout_rail: 'sinpe_mobile', payout_provider: 'manual_sinpe_cr', created_at: '2026-04-03T00:00:00.000Z' })]
     });
     setTableResponses('rlusd_transactions', {
       singleResponses: [mockSuccess({ id: 'rltx-hold-1', type: 'withdrawal_hold' })]
@@ -334,7 +334,7 @@ describe('RLUSD conversion API', () => {
       .post('/api/rlusd/withdrawals')
       .set(authHeaders)
       .set('Idempotency-Key', 'idem-create-1')
-      .send({ amount: 10, destinationType: 'wallet', destinationRef: 'wallet-123' });
+      .send({ amount: 10, destinationType: 'sinpe_mobile', destinationRef: '88887777' });
 
     expect(response.status).toBe(201);
     expect(response.body.withdrawalRequest.status).toBe('pending_review');
@@ -343,6 +343,18 @@ describe('RLUSD conversion API', () => {
   });
 
 
+
+
+  test('create withdrawal rechaza SINPE inválido', async () => {
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .set('Idempotency-Key', 'idem-sinpe-bad')
+      .send({ amount: 10, destinationType: 'sinpe_mobile', destinationRef: '1234' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('INVALID_SINPE_MOBILE_NUMBER');
+  });
 
   test('create withdrawal requiere Idempotency-Key', async () => {
     const response = await request(app)
@@ -430,6 +442,27 @@ describe('RLUSD conversion API', () => {
   });
 
 
+  test('process withdrawal SINPE manual registra rail/provider y referencia', async () => {
+    setTableResponses('rlusd_withdrawal_requests', {
+      maybeSingleResponses: [mockSuccess({ id: 'wd-process-1', user_id: authHeaders['x-test-user-id'], amount: 8, status: 'pending_review', destination_type: 'sinpe_mobile', destination_ref: '+50688887777' })],
+      singleResponses: [
+        mockSuccess({ id: 'wd-process-1', user_id: authHeaders['x-test-user-id'], amount: 8, status: 'processing', destination_type: 'sinpe_mobile', destination_ref: '+50688887777', payout_rail: 'sinpe_mobile', payout_provider: 'manual_sinpe_cr' }),
+        mockSuccess({ id: 'wd-process-1', user_id: authHeaders['x-test-user-id'], amount: 8, status: 'processing', destination_type: 'sinpe_mobile', destination_ref: '+50688887777', payout_rail: 'sinpe_mobile', payout_provider: 'manual_sinpe_cr', payout_status: 'pending_manual_execution', payout_reference: 'sinpe-manual-wd-process-1-1' })
+      ]
+    });
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals/wd-process-1/process')
+      .set(adminHeaders)
+      .send({ operatorNote: 'Validado manual' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.request.status).toBe('processing');
+    expect(response.body.request.payout_status).toBe('pending_manual_execution');
+    expect(response.body.request.payout_provider).toBe('manual_sinpe_cr');
+  });
+
+
 
   test('fail withdrawal devuelve reserved -> available', async () => {
     setTableResponses('rlusd_withdrawal_requests', {
@@ -467,7 +500,7 @@ describe('RLUSD conversion API', () => {
     const response = await request(app)
       .post('/api/rlusd/withdrawals/wd-complete-1/complete')
       .set(adminHeaders)
-      .send({});
+      .send({ payoutReference: 'sinpe-ref-123', externalId: 'bank-op-1' });
 
     expect(response.status).toBe(200);
     expect(response.body.request.status).toBe('completed');
@@ -501,6 +534,22 @@ describe('RLUSD conversion API', () => {
     expect(response.status).toBe(503);
     expect(response.body.error).toBe('RLUSD_WITHDRAWALS_DISABLED');
     process.env.RLUSD_WITHDRAWALS_ENABLED = 'true';
+  });
+
+
+
+  test('feature flag SINPE off bloquea create SINPE withdrawal', async () => {
+    process.env.RLUSD_SINPE_MOBILE_ENABLED = 'false';
+
+    const response = await request(app)
+      .post('/api/rlusd/withdrawals')
+      .set(authHeaders)
+      .set('Idempotency-Key', 'idem-sinpe-off')
+      .send({ amount: 10, destinationType: 'sinpe_mobile', destinationRef: '88887777' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error).toBe('RLUSD_SINPE_MOBILE_DISABLED');
+    process.env.RLUSD_SINPE_MOBILE_ENABLED = 'true';
   });
 
   test('transición inválida fail desde pending_review devuelve 409', async () => {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ApiClientError, apiGet, apiPost } from '@/lib/apiClient';
+import { ApiClientError, apiPost } from '@/lib/apiClient';
 import type {
   AocConversionRequest,
   RlusdQuote,
@@ -44,6 +44,16 @@ const statusClassName: Record<string, string> = {
   quoted: 'bg-slate-100 text-slate-700 border-slate-300',
 };
 
+function normalizeSinpeForSubmission(input: string) {
+  const compact = String(input || '').trim().replace(/[\s-()]/g, '');
+  const digits = compact.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 8) return `+506${digits}`;
+  if (digits.length === 11 && digits.startsWith('506')) return `+${digits}`;
+  if (compact.startsWith('+506') && digits.length === 11) return `+${digits}`;
+  return compact;
+}
+
 export default function RlusdConversionCard(props: Props) {
   const {
     aocBalance, rlusdAvailableBalance, rlusdReservedBalance, requests, withdrawalRequests, rlusdTransactions,
@@ -59,7 +69,7 @@ export default function RlusdConversionCard(props: Props) {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
-  const [withdrawalDestinationType, setWithdrawalDestinationType] = useState<'wallet' | 'bank' | 'sinpe' | 'other'>('wallet');
+  const [withdrawalDestinationType, setWithdrawalDestinationType] = useState<'wallet' | 'bank' | 'sinpe_mobile' | 'other'>('sinpe_mobile');
   const [withdrawalDestinationRef, setWithdrawalDestinationRef] = useState('');
   const [withdrawalQuote, setWithdrawalQuote] = useState<RlusdWithdrawalQuote | null>(null);
   const [loadingWithdrawalQuote, setLoadingWithdrawalQuote] = useState(false);
@@ -121,17 +131,21 @@ export default function RlusdConversionCard(props: Props) {
     if (!withdrawalQuote) return;
     setError(null); setSuccess(null); setRequestingWithdrawal(true); onWithdrawalRequested();
     try {
+      const normalizedDestinationRef = withdrawalDestinationType === 'sinpe_mobile'
+        ? normalizeSinpeForSubmission(withdrawalDestinationRef)
+        : withdrawalDestinationRef;
+
       const response = await apiPost<{ ok: boolean; withdrawalRequest: RlusdWithdrawalRequest; balance: { availableBalance: number; reservedBalance: number } }>('/api/rlusd/withdrawals', {
         amount: withdrawalQuote.amount,
         destinationType: withdrawalDestinationType,
-        destinationRef: withdrawalDestinationRef || null
+        destinationRef: normalizedDestinationRef || null
       });
       onWithdrawalCreated({
         request: response.withdrawalRequest,
         availableBalance: Number(response.balance?.availableBalance || 0),
         reservedBalance: Number(response.balance?.reservedBalance || 0),
       });
-      setSuccess('Solicitud de retiro enviada. Quedó en revisión.');
+      setSuccess('Solicitud de retiro enviada. Puede requerir revisión y ejecución manual del payout.');
       setWithdrawalAmount(''); setWithdrawalDestinationRef(''); setWithdrawalQuote(null);
     } catch (err) {
       onWithdrawalFailed();
@@ -171,7 +185,7 @@ export default function RlusdConversionCard(props: Props) {
       <h3 className="text-base font-semibold text-slate-900">Balance RLUSD</h3>
       <p className="text-lg font-bold text-emerald-700">Disponible: {toFixed(rlusdAvailableBalance, 6)} RLUSD</p>
       <p className="text-sm text-amber-700">Reservado: {toFixed(rlusdReservedBalance, 6)} RLUSD</p>
-      <p className="text-xs text-slate-600">Los retiros reales se conectarán en una próxima versión. Por ahora, esta solicitud se procesa dentro del sistema.</p>
+      <p className="text-xs text-slate-600">Para MVP en Costa Rica, puedes solicitar payout a SINPE Móvil. Este rail puede requerir operación manual por backoffice.</p>
       <button type="button" onClick={onRlusdBalanceViewed} className="text-xs text-emerald-700 underline">Actualizar saldo RLUSD</button>
     </div>
 
@@ -197,12 +211,12 @@ export default function RlusdConversionCard(props: Props) {
         </label>
         <label className="text-sm text-slate-700">Destino
           <select value={withdrawalDestinationType} onChange={(e) => setWithdrawalDestinationType(e.target.value as any)} className="mt-1 w-full rounded-lg border border-violet-200 px-3 py-2">
-            <option value="wallet">wallet</option><option value="bank">bank</option><option value="sinpe">sinpe</option><option value="other">other</option>
+            <option value="sinpe_mobile">SINPE Móvil (CR MVP)</option><option value="wallet">Wallet</option><option value="bank">Bank transfer</option><option value="other">Other</option>
           </select>
         </label>
       </div>
-      <label className="text-sm text-slate-700">Referencia de destino
-        <input value={withdrawalDestinationRef} onChange={(event) => setWithdrawalDestinationRef(event.target.value)} className="mt-1 w-full rounded-lg border border-violet-200 px-3 py-2" placeholder="Cuenta, wallet o referencia" />
+      <label className="text-sm text-slate-700">{withdrawalDestinationType === 'sinpe_mobile' ? 'Número SINPE Móvil' : 'Referencia de destino'}
+        <input value={withdrawalDestinationRef} onChange={(event) => setWithdrawalDestinationRef(event.target.value)} className="mt-1 w-full rounded-lg border border-violet-200 px-3 py-2" placeholder={withdrawalDestinationType === 'sinpe_mobile' ? 'Ej. 88887777, 50688887777 o +50688887777' : 'Cuenta, wallet o referencia'} />
       </label>
       <button type="button" onClick={fetchWithdrawalQuote} disabled={loadingWithdrawalQuote} className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-medium text-violet-700 disabled:opacity-60">{loadingWithdrawalQuote ? 'Calculando...' : 'Obtener quote'}</button>
       {withdrawalQuote && <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm space-y-1">
@@ -223,7 +237,9 @@ export default function RlusdConversionCard(props: Props) {
         <div className="flex items-center justify-between gap-2"><span>{formatDate(request.created_at)}</span><span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusClassName[request.status] || statusClassName.pending}`}>{request.status}</span></div>
         <div className="mt-1 text-slate-700">{toFixed(Number(request.amount), 6)} RLUSD • Comisión {toFixed(Number(request.fee_amount), 6)} • Recibirás {toFixed(Number(request.net_amount), 6)}</div>
         <div className="mt-1 text-xs text-slate-600">Destino: {request.destination_type}{request.destination_ref ? ` - ${request.destination_ref}` : ''}</div>
+        {(request.payout_rail || request.payout_provider || request.payout_reference) ? <div className="mt-1 text-xs text-slate-600">Rail: {request.payout_rail || 'n/a'} • Provider: {request.payout_provider || 'n/a'} • Ref: {request.payout_reference || 'pendiente'}</div> : null}
         {request.failure_reason ? <p className="mt-1 text-xs text-red-700">Falló: {request.failure_reason}</p> : null}
+        {request.payout_status === 'pending_manual_execution' ? <p className="mt-1 text-xs text-amber-700">Pendiente de ejecución manual por operaciones.</p> : null}
         {['requested', 'pending_review'].includes(request.status) ? <button type="button" onClick={() => cancelWithdrawalRequest(request.id)} disabled={cancellingWithdrawalId === request.id} className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 disabled:opacity-60">{cancellingWithdrawalId === request.id ? 'Cancelando...' : 'Cancelar solicitud'}</button> : null}
       </li>)}</ul>}
     </div>

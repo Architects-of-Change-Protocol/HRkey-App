@@ -63,10 +63,17 @@ export type RlusdWithdrawalRequest = {
   fee_amount: number;
   net_amount: number;
   status: 'requested' | 'pending_review' | 'processing' | 'completed' | 'failed' | 'cancelled';
-  destination_type: 'wallet' | 'bank' | 'sinpe' | 'other';
+  destination_type: 'wallet' | 'bank' | 'sinpe' | 'sinpe_mobile' | 'other';
   destination_label?: string | null;
   destination_ref?: string | null;
   reference_note?: string | null;
+  payout_rail?: string | null;
+  payout_provider?: string | null;
+  payout_reference?: string | null;
+  payout_external_id?: string | null;
+  payout_status?: string | null;
+  payout_status_detail?: string | null;
+  payout_operator_note?: string | null;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;

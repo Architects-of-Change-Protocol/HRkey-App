@@ -40,6 +40,7 @@ describe('AOC wallet UI components', () => {
     render(<RlusdConversionCard {...baseProps} rlusdAvailableBalance={9.7} rlusdReservedBalance={2.3} />);
     expect(screen.getByText(/Disponible: 9.700000 RLUSD/i)).toBeInTheDocument();
     expect(screen.getByText(/Reservado: 2.300000 RLUSD/i)).toBeInTheDocument();
+    expect(screen.getByText(/SINPE Móvil \(CR MVP\)/i)).toBeInTheDocument();
   });
 
   test('renderiza quote de retiro', async () => {
@@ -53,7 +54,7 @@ describe('AOC wallet UI components', () => {
     expect(screen.getByText(/9.750000/i)).toBeInTheDocument();
   });
 
-  test('crear solicitud de retiro funciona', async () => {
+  test('crear solicitud de retiro SINPE funciona y envía destinationType', async () => {
     const onWithdrawalCreated = jest.fn();
     mockApiPost
       .mockResolvedValueOnce({ ok: true, quote: { amount: 10, feeAmount: 0.25, netAmount: 9.75, minWithdrawal: 5, availableBalance: 20 } })
@@ -62,11 +63,13 @@ describe('AOC wallet UI components', () => {
     render(<RlusdConversionCard {...baseProps} onWithdrawalCreated={onWithdrawalCreated} />);
 
     fireEvent.change(screen.getByPlaceholderText('Ej. 10'), { target: { value: '10' } });
+    fireEvent.change(screen.getByPlaceholderText(/88887777/i), { target: { value: '88887777' } });
     fireEvent.click(screen.getAllByText(/Obtener quote/i)[1]);
     await screen.findByText(/Solicitar retiro/i);
     fireEvent.click(screen.getAllByText(/Solicitar retiro/i)[1]);
 
     await waitFor(() => expect(onWithdrawalCreated).toHaveBeenCalledTimes(1));
+    expect(mockApiPost).toHaveBeenLastCalledWith('/api/rlusd/withdrawals', expect.objectContaining({ destinationType: 'sinpe_mobile', destinationRef: '+50688887777' }));
   });
 
   test('cancelar retiro actualiza UI', async () => {
