@@ -9,6 +9,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { logIdentityVerification } from '../utils/auditLogger.js';
 import logger from '../logger.js';
+import { verifyIdentity as verifyIdentityWithAoc, registerCredential } from '../services/aocRuntimeClient.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
@@ -68,15 +69,47 @@ export async function verifyIdentity(req, res) {
       });
     }
 
-    // Phase 1: Automatically verify (no external KYC)
-    // TODO Phase 2: Call external KYC provider (Synaps, Onfido, etc.)
+    const reqLogger = logger.withRequest(req);
+
+    const verificationStartedAt = new Date().toISOString();
+    let verificationMethod = 'internal';
+    let runtimeVerification = null;
+    try {
+      runtimeVerification = await verifyIdentityWithAoc({
+        userId,
+        fullName,
+        idNumber,
+        selfieUrl: selfieUrl || null
+      }, req);
+
+      if (!runtimeVerification?.skipped) {
+        verificationMethod = 'aoc_runtime_remote';
+      }
+    } catch (runtimeError) {
+      reqLogger.error('AOC runtime identity verification failed', {
+        userId,
+        error: runtimeError.message,
+        reason_code: runtimeError.reason_code || runtimeError.code || null
+      });
+
+      return res.status(runtimeError.status || 502).json({
+        error: runtimeError.code || 'AOC_RUNTIME_ERROR',
+        message: runtimeError.message,
+        reason_code: runtimeError.reason_code || runtimeError.code || 'AOC_RUNTIME_ERROR'
+      });
+    }
+
+    // Preserve HRKey user-facing response shape while sourcing trust decision from AOC runtime.
     const kycMetadata = {
       fullName,
       idNumber,
       selfieUrl: selfieUrl || null,
-      verifiedAt: new Date().toISOString(),
-      method: 'internal', // Phase 1
-      // TODO Phase 2: Add external provider response data
+      verifiedAt: verificationStartedAt,
+      method: verificationMethod,
+      runtime: runtimeVerification?.skipped ? null : {
+        verified: runtimeVerification?.verified ?? true,
+        verificationId: runtimeVerification?.verificationId || null
+      }
     };
 
     // Update user record
@@ -93,7 +126,6 @@ export async function verifyIdentity(req, res) {
       .single();
 
     if (updateError) {
-      const reqLogger = logger.withRequest(req);
       reqLogger.error('Failed to update user verification status', {
         userId: userId,
         error: updateError.message,
@@ -105,13 +137,31 @@ export async function verifyIdentity(req, res) {
       });
     }
 
+    try {
+      await registerCredential({
+        userId,
+        credentialType: 'identity_verification',
+        verifiedAt: updatedUser.kyc_verified_at,
+        metadata: {
+          fullName,
+          verificationMethod
+        }
+      }, req);
+    } catch (runtimeError) {
+      reqLogger.warn('AOC runtime credential registration failed; continuing with local success', {
+        userId,
+        error: runtimeError.message,
+        reason_code: runtimeError.reason_code || runtimeError.code || null
+      });
+    }
+
     // Log audit trail
     await logIdentityVerification(
       userId,
       {
         fullName,
         idNumber: idNumber.substring(0, 4) + '****', // Redact for security
-        method: 'internal'
+        method: verificationMethod
       },
       req
     );
