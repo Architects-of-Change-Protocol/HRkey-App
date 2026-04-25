@@ -30,6 +30,12 @@ export const supabase =
           signInWithPassword: async () => {
             throw notConfiguredError();
           },
+          signInWithOAuth: async () => {
+            throw notConfiguredError();
+          },
+          exchangeCodeForSession: async () => {
+            throw notConfiguredError();
+          },
         },
         from: () => {
           throw notConfiguredError();
