@@ -43,4 +43,9 @@ export const supabase =
         rpc: () => {
           throw notConfiguredError();
         },
+        storage: {
+          from: () => {
+            throw notConfiguredError();
+          },
+        },
       };

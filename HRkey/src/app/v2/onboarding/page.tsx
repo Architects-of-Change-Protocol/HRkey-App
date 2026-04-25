@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import V2Shell from "@/components/v2/V2Shell";
 import CandidateOnboardingForm from "@/components/v2/CandidateOnboardingForm";
 
 type UserType = "candidate" | "company";
 
-export default function V2OnboardingPage() {
+function V2OnboardingPageContent() {
   const searchParams = useSearchParams();
   const type = searchParams.get("type");
   const initialType = type === "candidate" || type === "company" ? type : "";
@@ -117,5 +117,13 @@ export default function V2OnboardingPage() {
         ) : null}
       </div>
     </V2Shell>
+  );
+}
+
+export default function V2OnboardingPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-3xl p-6 text-sm text-slate-600">Loading onboarding...</div>}>
+      <V2OnboardingPageContent />
+    </Suspense>
   );
 }

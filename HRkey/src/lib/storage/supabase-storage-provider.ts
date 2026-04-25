@@ -1,0 +1,97 @@
+import { supabase } from "@/lib/supabaseClient";
+import type {
+  CandidateCVUploadInput,
+  CandidateCVUploadResult,
+  CandidateProfileRecord,
+  CandidateProfileWriteInput,
+  StorageProvider,
+} from "@/lib/storage/storage-provider";
+
+const CV_UPLOAD_BUCKET = "cv-uploads";
+
+function sanitizeFilename(fileName: string): string {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
+}
+
+function parseMissingColumn(error: { message?: string } | null): string | null {
+  const message = error?.message || "";
+  const match = message.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of\s+relation\s+"profiles"\s+does\s+not\s+exist/i);
+  return match?.[1] ?? null;
+}
+
+async function persistProfilePayload(payload: Record<string, unknown>): Promise<CandidateProfileRecord> {
+  const { data, error } = await supabase.from("profiles").upsert(payload).select("*").single();
+
+  if (error) {
+    const missingColumn = parseMissingColumn(error);
+
+    if (missingColumn && Object.prototype.hasOwnProperty.call(payload, missingColumn)) {
+      const reducedPayload = { ...payload };
+      delete reducedPayload[missingColumn];
+      return persistProfilePayload(reducedPayload);
+    }
+
+    throw error;
+  }
+
+  return data as CandidateProfileRecord;
+}
+
+function withDefinedField(target: Record<string, unknown>, key: string, value: unknown) {
+  if (value !== undefined) {
+    target[key] = value;
+  }
+}
+
+export class SupabaseStorageProvider implements StorageProvider {
+  async saveCandidateProfile(input: CandidateProfileWriteInput): Promise<CandidateProfileRecord> {
+    const payload: Record<string, unknown> = {
+      id: input.userId,
+      updated_at: new Date().toISOString(),
+    };
+
+    withDefinedField(payload, "full_name", input.full_name);
+    withDefinedField(payload, "title", input.title);
+    withDefinedField(payload, "company", input.company);
+    withDefinedField(payload, "professional_summary", input.professional_summary);
+    withDefinedField(payload, "account_type", input.account_type ?? "candidate");
+    withDefinedField(payload, "onboarding_complete", input.onboarding_complete);
+    withDefinedField(payload, "cv_url", input.cv_url);
+
+    return persistProfilePayload(payload);
+  }
+
+  async getCandidateProfile(userId: string): Promise<CandidateProfileRecord | null> {
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+
+    if (error) {
+      console.error("[storage] failed to fetch candidate profile", error);
+      return null;
+    }
+
+    return (data as CandidateProfileRecord | null) ?? null;
+  }
+
+  async uploadCandidateCV(input: CandidateCVUploadInput): Promise<CandidateCVUploadResult> {
+    const timestamp = Date.now();
+    const safeName = sanitizeFilename(input.file.name || "candidate-cv");
+    const path = `${input.userId}/${timestamp}-${safeName}`;
+
+    const { error: uploadError } = await supabase.storage.from(CV_UPLOAD_BUCKET).upload(path, input.file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: input.file.type || undefined,
+    });
+
+    if (uploadError) throw uploadError;
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(CV_UPLOAD_BUCKET).getPublicUrl(path);
+
+    return {
+      storagePath: path,
+      publicUrl: publicUrl || null,
+    };
+  }
+}
