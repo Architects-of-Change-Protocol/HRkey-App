@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import V2Shell from "@/components/v2/V2Shell";
+import CandidateOnboardingForm from "@/components/v2/CandidateOnboardingForm";
 
 type UserType = "candidate" | "company";
 
@@ -13,8 +14,6 @@ export default function V2OnboardingPage() {
   const initialType = type === "candidate" || type === "company" ? type : "";
 
   const [selectedType, setSelectedType] = useState<UserType | "">(initialType);
-  const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [hiringVolume, setHiringVolume] = useState("");
 
@@ -41,8 +40,9 @@ export default function V2OnboardingPage() {
           <button
             type="button"
             className={`rounded-xl border p-4 text-left transition ${
-              selectedType === "candidate" ? "border-cyan-400 bg-cyan-50" : "border-slate-200"
+              selectedType === "candidate" ? "bg-[var(--teal-soft)]" : "bg-white"
             }`}
+            style={{ borderColor: selectedType === "candidate" ? "var(--teal-primary)" : "var(--border)" }}
             onClick={() => setSelectedType("candidate")}
           >
             <p className="font-semibold text-slate-900">Candidate onboarding</p>
@@ -51,8 +51,9 @@ export default function V2OnboardingPage() {
           <button
             type="button"
             className={`rounded-xl border p-4 text-left transition ${
-              selectedType === "company" ? "border-cyan-400 bg-cyan-50" : "border-slate-200"
+              selectedType === "company" ? "bg-[var(--teal-soft)]" : "bg-white"
             }`}
+            style={{ borderColor: selectedType === "company" ? "var(--teal-primary)" : "var(--border)" }}
             onClick={() => setSelectedType("company")}
           >
             <p className="font-semibold text-slate-900">Company onboarding</p>
@@ -60,37 +61,10 @@ export default function V2OnboardingPage() {
           </button>
         </section>
 
-        {selectedType === "candidate" ? (
-          <section className="space-y-4 rounded-xl border border-slate-200 p-5">
-            <h2 className="text-lg font-semibold text-slate-900">Candidate profile basics</h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="text-sm text-slate-700">
-                Full name
-                <input
-                  value={fullName}
-                  onChange={(event) => setFullName(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-                  placeholder="Alex Rivera"
-                />
-              </label>
-              <label className="text-sm text-slate-700">
-                Current role
-                <input
-                  value={role}
-                  onChange={(event) => setRole(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-                  placeholder="Product Manager"
-                />
-              </label>
-            </div>
-            <p className="text-xs text-slate-500">
-              TODO: Connect this form to Supabase profile creation and candidate onboarding persistence.
-            </p>
-          </section>
-        ) : null}
+        {selectedType === "candidate" ? <CandidateOnboardingForm /> : null}
 
         {selectedType === "company" ? (
-          <section className="space-y-4 rounded-xl border border-slate-200 p-5">
+          <section className="space-y-4 rounded-xl border p-5" style={{ borderColor: "var(--border)" }}>
             <h2 className="text-lg font-semibold text-slate-900">Company setup basics</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="text-sm text-slate-700">
@@ -98,7 +72,8 @@ export default function V2OnboardingPage() {
                 <input
                   value={companyName}
                   onChange={(event) => setCompanyName(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border px-3 py-2"
+                  style={{ borderColor: "var(--border)" }}
                   placeholder="Northstar Labs"
                 />
               </label>
@@ -107,7 +82,8 @@ export default function V2OnboardingPage() {
                 <input
                   value={hiringVolume}
                   onChange={(event) => setHiringVolume(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border px-3 py-2"
+                  style={{ borderColor: "var(--border)" }}
                   placeholder="10 roles"
                 />
               </label>
@@ -118,20 +94,27 @@ export default function V2OnboardingPage() {
           </section>
         ) : null}
 
-        <section className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <Link
-            href="/v2/auth"
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+        {selectedType !== "candidate" ? (
+          <section
+            className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
+            style={{ borderColor: "var(--border)" }}
           >
-            Back to auth
-          </Link>
-          <Link
-            href={selectedType ? ctaHref : "/v2/auth"}
-            className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-          >
-            Complete onboarding
-          </Link>
-        </section>
+            <Link
+              href="/v2/auth"
+              className="rounded-lg border px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              style={{ borderColor: "var(--border)" }}
+            >
+              Back to auth
+            </Link>
+            <Link
+              href={selectedType ? ctaHref : "/v2/auth"}
+              className="rounded-lg px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              style={{ backgroundColor: "var(--teal-primary)" }}
+            >
+              Complete onboarding
+            </Link>
+          </section>
+        ) : null}
       </div>
     </V2Shell>
   );
