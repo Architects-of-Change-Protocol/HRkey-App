@@ -190,7 +190,7 @@
           </ul>
         </nav>
 
-        <a href="/landing/auth.html" class="btn-hrkey hrkey-cta">Get Started</a>
+        <a href="/v2/auth" class="btn-hrkey hrkey-cta">Start Free</a>
       </div>
     </header>
 
@@ -219,10 +219,13 @@
             </h1>
 
             <p class="p-lg mb-4 hero-subtext">
-              Build a verified professional reputation you can share with any company, anytime.
+              Create a verified reference profile once and reuse it across every role, interview, and hiring process.
             </p>
 
-            <a href="/landing/auth.html" class="btn-hrkey mb-4">Request your first reference</a>
+            <div class="d-flex flex-column flex-sm-row gap-3 mb-4">
+              <a href="/v2/auth?type=candidate" class="btn-hrkey">I'm a Candidate</a>
+              <a href="/v2/auth?type=company" class="btn btn-outline-light" style="border-radius:12px; padding:14px 26px; font-weight:600;">I'm Hiring</a>
+            </div>
 
             <div class="tech-stack mt-4">
               <h6 class="mb-3 text-white">Built on:</h6>
@@ -361,9 +364,9 @@
         <div class="row justify-content-center">
           <div class="col-lg-10 col-xl-8">
             <div class="section-title title-01 mb-60 text-center">
-              <h2 class="h2-md">Simple pricing that grows with usage</h2>
+              <h2 class="h2-md">Built for candidates and hiring teams</h2>
               <p class="p-xl">
-                HRKey is free for professionals. Companies pay only when they access verified references.
+                Candidates build trusted profiles for free. Companies unlock verified reference insights when they need them.
               </p>
             </div>
           </div>
@@ -386,7 +389,7 @@
                   </ul>
                 </div>
 
-                <a href="/landing/auth.html" class="btn-hrkey w-100 pricing-cta">Get Started Free</a>
+                <a href="/v2/auth" class="btn-hrkey w-100 pricing-cta">Get Started Free</a>
               </div>
             </div>
           </div>
@@ -408,7 +411,7 @@
                   </ul>
                 </div>
 
-                <a href="/landing/auth.html" class="btn-hrkey w-100 pricing-cta">Contact for company access</a>
+                <a href="/v2/auth" class="btn-hrkey w-100 pricing-cta">Start company access</a>
               </div>
             </div>
           </div>
@@ -424,39 +427,39 @@
       <div class="container text-center">
         <h2 class="h2-md">How HRKey works</h2>
         <p class="p-xl mb-50">
-          Build your references once and reuse them whenever opportunity appears.
+          A simple, conversion-focused flow for both sides of hiring.
         </p>
 
         <div class="row">
           <div class="col-md-3">
             <div class="process-step">
               <div class="step-icon">👤</div>
-              <h5>Request references</h5>
-              <p>Ask managers, peers, or clients once.</p>
+              <h5>Choose your path</h5>
+              <p>Start as a Candidate or Company in under a minute.</p>
             </div>
           </div>
 
           <div class="col-md-3">
             <div class="process-step">
               <div class="step-icon">📩</div>
-              <h5>Receive feedback</h5>
-              <p>Collect structured, verified responses.</p>
+              <h5>Complete onboarding</h5>
+              <p>Answer a few guided questions to personalize your workspace.</p>
             </div>
           </div>
 
           <div class="col-md-3">
             <div class="process-step">
               <div class="step-icon">🔗</div>
-              <h5>Share your link</h5>
-              <p>Your references ready to use anytime.</p>
+              <h5>Activate your workspace</h5>
+              <p>Get a clean dashboard focused on your next action.</p>
             </div>
           </div>
 
           <div class="col-md-3">
             <div class="process-step">
               <div class="step-icon">🏢</div>
-              <h5>Companies review</h5>
-              <p>Faster decisions with real proof.</p>
+              <h5>Move faster with trust</h5>
+              <p>Use verified data to improve hiring confidence and speed.</p>
             </div>
           </div>
         </div>
@@ -467,15 +470,15 @@
       <div class="container">
         <div style="max-width:720px; margin:0 auto; text-align:center;">
           <h2 class="h2-md" style="color:white;">
-            Start building your references today
+            Turn every hiring decision into a trust decision
           </h2>
 
           <p class="p-xl" style="color:#cbd5f5; margin:20px auto 30px;">
-            Ask once, reuse forever, and be ready when opportunity shows up.
+            Whether you are growing your career or building a team, HRKey gives you a faster path to verified outcomes.
           </p>
 
-          <a href="/landing/auth.html" class="btn-hrkey" style="font-size:18px; padding:14px 36px; display:inline-block;">
-            Request your first reference
+          <a href="/v2/auth" class="btn-hrkey" style="font-size:18px; padding:14px 36px; display:inline-block;">
+            Start your free profile
           </a>
 
           <p style="margin-top:14px; color:#94a3b8; font-size:14px;">
@@ -519,7 +522,7 @@
 
   </div>
 
-  <!-- Landing must remain presentation-only. Auth/profile routing belongs to /landing/auth.html. -->
+  <!-- Landing must remain presentation-only. Auth/profile routing belongs to /v2/auth. -->
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       const videoCover = document.getElementById('video-cover');

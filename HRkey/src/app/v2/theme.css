@@ -1,0 +1,12 @@
+:root {
+  --teal-primary: #0d9488;
+  --teal-light: #99f6e4;
+  --teal-soft: #f0fdfa;
+  --gray-light: #f8fafc;
+  --gray-badge: #e2e8f0;
+  --radius: 14px;
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --border: #e2e8f0;
+  --input-background: #ffffff;
+}
