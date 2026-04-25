@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ReferenceRequestsTable, { type ReferenceRequestRow } from "@/components/v2/ReferenceRequestsTable";
@@ -11,41 +11,28 @@ import {
   requireAuthenticatedCandidateUserId,
 } from "@/lib/profile/candidate-profile-service";
 import type { CandidateProfileRecord } from "@/lib/storage/storage-provider";
+import {
+  calculateReferenceMetrics,
+  fetchCandidateReferenceRequests,
+  type CandidateReferenceRequest
+} from "@/lib/v2/reference-requests-service";
 
-const MOCK_REFERENCE_REQUESTS: ReferenceRequestRow[] = [
-  {
-    id: "req-01",
-    candidateName: "Avery Morgan",
-    role: "Senior Product Designer",
-    requestedAt: "Apr 24, 2026",
-    status: "Pending",
-  },
-  {
-    id: "req-02",
-    candidateName: "Jordan Patel",
-    role: "People Operations Lead",
-    requestedAt: "Apr 22, 2026",
-    status: "Partial",
-  },
-  {
-    id: "req-03",
-    candidateName: "Samira Chen",
-    role: "Engineering Manager",
-    requestedAt: "Apr 19, 2026",
-    status: "Completed",
-  },
-  {
-    id: "req-04",
-    candidateName: "Diego Alvarez",
-    role: "Revenue Operations Analyst",
-    requestedAt: "Apr 17, 2026",
-    status: "Completed",
-  },
-];
+const mapToTableRows = (rows: CandidateReferenceRequest[]): ReferenceRequestRow[] =>
+  rows.map((row) => ({
+    id: row.id,
+    refereeName: row.refereeName,
+    refereeEmail: row.refereeEmail,
+    relationship: row.relationship,
+    company: row.company,
+    role: row.role,
+    requestedAt: row.requestedAt,
+    status: row.status,
+  }));
 
 export default function CandidateDashboardV2Page() {
   const router = useRouter();
   const [profile, setProfile] = useState<CandidateProfileRecord | null>(null);
+  const [referenceRequests, setReferenceRequests] = useState<ReferenceRequestRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -58,10 +45,15 @@ export default function CandidateDashboardV2Page() {
 
       try {
         const userId = await requireAuthenticatedCandidateUserId();
-        const currentProfile = await getCurrentCandidateProfile(userId);
+
+        const [currentProfile, referenceRows] = await Promise.all([
+          getCurrentCandidateProfile(userId),
+          fetchCandidateReferenceRequests(userId),
+        ]);
 
         if (!mounted) return;
         setProfile(currentProfile);
+        setReferenceRequests(mapToTableRows(referenceRows));
       } catch (error) {
         if (!mounted) return;
 
@@ -87,6 +79,7 @@ export default function CandidateDashboardV2Page() {
 
   const completion = getProfileCompletion(profile);
   const welcomeName = profile?.full_name?.trim() || "Candidate";
+  const metrics = useMemo(() => calculateReferenceMetrics(referenceRequests), [referenceRequests]);
 
   return (
     <V2Shell
@@ -114,8 +107,8 @@ export default function CandidateDashboardV2Page() {
         <div className="grid gap-4 sm:grid-cols-3">
           {[
             ["Profile completion", `${completion}%`],
-            ["References requested", "14"],
-            ["Verified references", "9"],
+            ["References requested", `${metrics.requested}`],
+            ["Verified references", `${metrics.verified}`],
           ].map(([label, value]) => (
             <div key={label} className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--background)] p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
@@ -124,9 +117,16 @@ export default function CandidateDashboardV2Page() {
           ))}
         </div>
 
-        <ReferenceRequestsTable rows={MOCK_REFERENCE_REQUESTS} />
+        <div className="flex justify-end">
+          <Link
+            href="/v2/candidate/references/new"
+            className="rounded-[var(--radius)] bg-[var(--teal-primary)] px-4 py-2 text-sm font-semibold text-white"
+          >
+            Request New Reference
+          </Link>
+        </div>
 
-        <p className="text-xs text-slate-500">TODO: Replace mock requests with real reference workflow data.</p>
+        <ReferenceRequestsTable rows={referenceRequests} />
 
         <div className="flex flex-wrap gap-3">
           <Link
