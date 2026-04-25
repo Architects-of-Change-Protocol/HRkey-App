@@ -4,6 +4,7 @@ import type {
   CandidateCVUploadResult,
   CandidateProfileRecord,
   CandidateProfileWriteInput,
+  CandidateWorkExperienceWriteInput,
   StorageProvider,
 } from "@/lib/storage/storage-provider";
 
@@ -93,5 +94,33 @@ export class SupabaseStorageProvider implements StorageProvider {
       storagePath: path,
       publicUrl: publicUrl || null,
     };
+  }
+
+  async saveCandidateWorkExperiences(input: CandidateWorkExperienceWriteInput): Promise<void> {
+    const { error: deleteError } = await supabase.from("profile_experiences").delete().eq("profile_id", input.userId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    if (input.experiences.length === 0) return;
+
+    const rows = input.experiences.map((experience, index) => ({
+      profile_id: input.userId,
+      sort_order: index,
+      title: experience.role,
+      company: experience.company,
+      start_date: experience.duration,
+      end_date: null,
+      is_current: false,
+      summary: experience.keyResponsibilities,
+      source: "experience_review",
+    }));
+
+    const { error: insertError } = await supabase.from("profile_experiences").insert(rows);
+
+    if (insertError) {
+      throw insertError;
+    }
   }
 }

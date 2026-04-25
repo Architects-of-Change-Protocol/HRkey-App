@@ -31,8 +31,21 @@ export type CandidateCVUploadResult = {
   publicUrl: string | null;
 };
 
+export type CandidateWorkExperienceInput = {
+  role: string | null;
+  company: string | null;
+  duration: string | null;
+  keyResponsibilities: string | null;
+};
+
+export type CandidateWorkExperienceWriteInput = {
+  userId: string;
+  experiences: CandidateWorkExperienceInput[];
+};
+
 export interface StorageProvider {
   saveCandidateProfile(input: CandidateProfileWriteInput): Promise<CandidateProfileRecord>;
   getCandidateProfile(userId: string): Promise<CandidateProfileRecord | null>;
   uploadCandidateCV(input: CandidateCVUploadInput): Promise<CandidateCVUploadResult>;
+  saveCandidateWorkExperiences(input: CandidateWorkExperienceWriteInput): Promise<void>;
 }

@@ -45,14 +45,15 @@ export default function CandidateOnboardingForm() {
     try {
       await saveCandidateOnboarding({
         ...formValues,
-        onboarding_complete: true,
+        onboarding_complete: false,
       });
 
       if (selectedCV) {
         await uploadCV(selectedCV);
       }
 
-      router.push("/v2/candidate/dashboard");
+      const prefill = selectedCV ? "?prefill=mock" : "";
+      router.push(`/v2/onboarding/experience${prefill}`);
     } catch (error) {
       if (error instanceof Error && error.message === "AUTH_REQUIRED") {
         router.push("/v2/auth?type=candidate");
