@@ -1,6 +1,9 @@
 import { fetchCurrentUser } from "@/lib/auth/profile-service";
 import { SupabaseStorageProvider } from "@/lib/storage/supabase-storage-provider";
-import type { CandidateProfileRecord } from "@/lib/storage/storage-provider";
+import type {
+  CandidateProfileRecord,
+  CandidateWorkExperienceInput,
+} from "@/lib/storage/storage-provider";
 
 const ALLOWED_EXTENSIONS = ["pdf", "doc", "docx"];
 const ALLOWED_MIME_TYPES = [
@@ -65,6 +68,38 @@ export async function saveCandidateOnboarding(data: CandidateOnboardingInput): P
   });
 }
 
+export async function saveCandidateWorkExperiences(experiences: CandidateWorkExperienceInput[]): Promise<void> {
+  const userId = await requireAuthenticatedCandidateUserId();
+
+  const normalizedExperiences = experiences
+    .map((experience) => ({
+      role: normalize(experience.role || ""),
+      company: normalize(experience.company || ""),
+      duration: normalize(experience.duration || ""),
+      keyResponsibilities: normalize(experience.keyResponsibilities || ""),
+    }))
+    .filter((experience) =>
+      Boolean(experience.role || experience.company || experience.duration || experience.keyResponsibilities)
+    )
+    .map((experience) => ({
+      role: experience.role,
+      company: experience.company,
+      duration: experience.duration,
+      keyResponsibilities: experience.keyResponsibilities,
+    }));
+
+  await provider.saveCandidateWorkExperiences({
+    userId,
+    experiences: normalizedExperiences,
+  });
+
+  await provider.saveCandidateProfile({
+    userId,
+    account_type: "candidate",
+    onboarding_complete: true,
+  });
+}
+
 export async function uploadCV(file: File): Promise<{ cvUrl: string; storagePath: string }> {
   const userId = await requireAuthenticatedCandidateUserId();
 
@@ -76,7 +111,6 @@ export async function uploadCV(file: File): Promise<{ cvUrl: string; storagePath
     userId,
     cv_url: upload.storagePath,
     account_type: "candidate",
-    onboarding_complete: true,
   });
 
   return {
