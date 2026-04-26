@@ -101,7 +101,7 @@ async function fetchSubmittedReferences(candidateId: string): Promise<SubmittedR
       rating: numericRating,
       summary: typeof row.summary === "string" && row.summary.trim() ? row.summary : "No summary provided yet.",
       createdAt: typeof row.created_at === "string" ? row.created_at : null,
-      detailHref: "/candidate/evaluation",
+      detailHref: `/v2/candidate/references/${String(row.id || "detail")}`,
     };
   });
 }
