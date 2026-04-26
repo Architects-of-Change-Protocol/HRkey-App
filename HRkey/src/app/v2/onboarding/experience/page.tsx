@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -42,7 +43,7 @@ function isExperienceEmpty(experience: ExperienceDraft) {
   return Object.values(experience).every((value) => value.trim().length === 0);
 }
 
-export default function V2ExperienceReviewPage() {
+function ExperienceReviewContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const shouldUseMockPrefill = searchParams.get("prefill") === "mock";
@@ -86,7 +87,7 @@ export default function V2ExperienceReviewPage() {
         }))
       );
 
-      router.push("/v2/candidate/dashboard");
+      router.push("/v2/onboarding/details");
     } catch (error) {
       if (error instanceof Error && error.message === "AUTH_REQUIRED") {
         router.push("/v2/auth?type=candidate");
@@ -110,10 +111,10 @@ export default function V2ExperienceReviewPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs font-medium text-slate-600">
             <span>Candidate onboarding</span>
-            <span>Step 2 of 2</span>
+            <span>Step 2 of 3</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "var(--gray-light)" }}>
-            <div className="h-full w-full rounded-full" style={{ backgroundColor: "var(--teal-primary)" }} />
+            <div className="h-full w-2/3 rounded-full" style={{ backgroundColor: "var(--teal-primary)" }} />
           </div>
           <p className="text-sm text-slate-600">
             {completedCount} experience {completedCount === 1 ? "entry" : "entries"} ready to save.
@@ -196,7 +197,7 @@ export default function V2ExperienceReviewPage() {
           style={{ borderColor: "var(--border)" }}
         >
           <Link
-            href="/v2/candidate/dashboard"
+            href="/v2/onboarding/details"
             className="rounded-lg border px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             style={{ borderColor: "var(--border)" }}
           >
@@ -214,5 +215,13 @@ export default function V2ExperienceReviewPage() {
         </section>
       </section>
     </V2Shell>
+  );
+}
+
+export default function V2ExperienceReviewPage() {
+  return (
+    <Suspense fallback={null}>
+      <ExperienceReviewContent />
+    </Suspense>
   );
 }

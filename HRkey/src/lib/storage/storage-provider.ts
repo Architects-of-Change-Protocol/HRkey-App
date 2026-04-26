@@ -19,6 +19,9 @@ export type CandidateProfileWriteInput = {
   account_type?: "candidate" | "company" | null;
   onboarding_complete?: boolean;
   cv_url?: string | null;
+  onboarding_details?: Record<string, unknown> | null;
+  profile_meta?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type CandidateCVUploadInput = {
@@ -43,9 +46,23 @@ export type CandidateWorkExperienceWriteInput = {
   experiences: CandidateWorkExperienceInput[];
 };
 
+export type CandidateEducationInput = {
+  degree: string | null;
+  institution: string | null;
+};
+
+export type CandidateAdditionalDetailsWriteInput = {
+  userId: string;
+  education: CandidateEducationInput[];
+  languages: string[];
+  certifications: string[];
+  skills: string[];
+};
+
 export interface StorageProvider {
   saveCandidateProfile(input: CandidateProfileWriteInput): Promise<CandidateProfileRecord>;
   getCandidateProfile(userId: string): Promise<CandidateProfileRecord | null>;
   uploadCandidateCV(input: CandidateCVUploadInput): Promise<CandidateCVUploadResult>;
   saveCandidateWorkExperiences(input: CandidateWorkExperienceWriteInput): Promise<void>;
+  saveCandidateAdditionalDetails(input: CandidateAdditionalDetailsWriteInput): Promise<void>;
 }

@@ -71,10 +71,10 @@ export default function CandidateOnboardingForm() {
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs font-medium text-slate-600">
           <span>Candidate onboarding</span>
-          <span>Step 1 of 2</span>
+          <span>Step 1 of 3</span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "var(--gray-light)" }}>
-          <div className="h-full w-1/2 rounded-full" style={{ backgroundColor: "var(--teal-primary)" }} />
+          <div className="h-full w-1/3 rounded-full" style={{ backgroundColor: "var(--teal-primary)" }} />
         </div>
       </div>
 

@@ -95,6 +95,9 @@ export default function CandidateDashboardV2Page() {
           <p className="text-sm text-slate-700">Company: {profile?.company?.trim() || "Not provided"}</p>
           <p className="text-sm text-slate-700">CV Uploaded: {profile?.cv_url ? "Yes" : "No"}</p>
           <p className="text-sm font-semibold text-[var(--teal-primary)]">Profile Completion: {completion}%</p>
+          <p className="text-sm text-slate-700">
+            Onboarding: {profile?.onboarding_complete ? "Complete ✅" : "In progress"}
+          </p>
 
           {isLoading ? <p className="mt-2 text-xs text-slate-600">Loading profile...</p> : null}
           {errorMessage ? (
