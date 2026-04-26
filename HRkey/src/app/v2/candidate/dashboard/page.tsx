@@ -178,7 +178,7 @@ export default function CandidateDashboardV2Page() {
           </Link>
           <div className="flex items-center gap-2">
             <Link
-              href="/v2/candidate/references/new"
+              href="/v2/candidate/references/request"
               className="rounded-lg bg-[var(--teal-primary)] px-3 py-2 text-xs font-semibold text-white"
             >
               Request Reference
@@ -219,7 +219,7 @@ export default function CandidateDashboardV2Page() {
             <div className="rounded-xl border border-dashed border-[var(--border)] bg-white p-5 text-center">
               <p className="text-sm text-slate-700">Your first reference can unlock new opportunities.</p>
               <Link
-                href="/v2/candidate/references/new"
+                href="/v2/candidate/references/request"
                 className="mt-3 inline-flex rounded-lg bg-[var(--teal-primary)] px-4 py-2 text-sm font-semibold text-white"
               >
                 Request Reference
