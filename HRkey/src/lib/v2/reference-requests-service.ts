@@ -15,6 +15,11 @@ export interface CandidateReferenceRequest {
   referenceLink: string | null;
 }
 
+export interface ReferenceGoal {
+  description: string;
+  kpis: string[];
+}
+
 export interface CreateReferenceRequestInput {
   candidateId: string;
   refereeName: string;
@@ -23,6 +28,8 @@ export interface CreateReferenceRequestInput {
   companyWorkedTogether: string;
   optionalMessage?: string;
   profileExperienceId?: string;
+  goals?: ReferenceGoal[];
+  focusAreas?: string[];
 }
 
 type RequestCreationApiResponse = {
@@ -49,6 +56,10 @@ type ReferenceInviteRow = {
     company?: string;
     role?: string;
     optional_message?: string;
+    goals?: ReferenceGoal[];
+    focus_areas?: string[];
+    selected_experience_id?: string;
+    referee_name?: string;
   } | null;
   profile_experience_id?: string | null;
 };
@@ -74,12 +85,16 @@ export async function createReferenceRequest(input: CreateReferenceRequestInput)
   const payload = {
     candidate_id: input.candidateId,
     referee_email: input.refereeEmail,
-    message: input.refereeName,
+    message: input.optionalMessage || "",
     profile_experience_id: input.profileExperienceId,
     metadata: {
       relationship: input.relationship,
       company: input.companyWorkedTogether,
       optional_message: input.optionalMessage || "",
+      referee_name: input.refereeName,
+      focus_areas: input.focusAreas || [],
+      goals: input.goals || [],
+      selected_experience_id: input.profileExperienceId || null,
     },
   };
 

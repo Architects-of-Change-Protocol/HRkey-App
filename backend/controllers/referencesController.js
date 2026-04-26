@@ -407,7 +407,7 @@ export async function getMyPendingInvites(req, res) {
  */
 export async function requestReferenceInvite(req, res) {
   try {
-    const { candidate_id, candidate_wallet, referee_email, role_id, message, profile_experience_id } = req.body;
+    const { candidate_id, candidate_wallet, referee_email, role_id, message, metadata, profile_experience_id } = req.body;
     const candidateId = await resolveCandidateId({
       candidateId: candidate_id,
       candidateWallet: candidate_wallet
@@ -491,7 +491,8 @@ export async function requestReferenceInvite(req, res) {
       applicantData: {
         role_id: role_id || null,
         message: message || null,
-        requested_by: req.user?.id || null
+        requested_by: req.user?.id || null,
+        ...(metadata && typeof metadata === 'object' ? metadata : {})
       },
       profileExperienceId: selectedExperience?.id || null,
       expiresInDays: 7
