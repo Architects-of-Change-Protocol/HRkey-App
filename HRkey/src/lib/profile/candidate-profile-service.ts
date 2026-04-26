@@ -1,6 +1,7 @@
 import { fetchCurrentUser } from "@/lib/auth/profile-service";
 import { SupabaseStorageProvider } from "@/lib/storage/supabase-storage-provider";
 import type {
+  CandidateAdditionalDetailsWriteInput,
   CandidateProfileRecord,
   CandidateWorkExperienceInput,
 } from "@/lib/storage/storage-provider";
@@ -19,6 +20,18 @@ export type CandidateOnboardingInput = {
   company: string;
   professional_summary: string;
   onboarding_complete?: boolean;
+};
+
+export type CandidateEducationInput = {
+  degree: string;
+  institution: string;
+};
+
+export type CandidateAdditionalDetailsInput = {
+  education: CandidateEducationInput[];
+  languages: string[];
+  certifications: string[];
+  skills: string[];
 };
 
 const provider = new SupabaseStorageProvider();
@@ -92,6 +105,58 @@ export async function saveCandidateWorkExperiences(experiences: CandidateWorkExp
     userId,
     experiences: normalizedExperiences,
   });
+
+  await provider.saveCandidateProfile({
+    userId,
+    account_type: "candidate",
+    onboarding_complete: false,
+  });
+}
+
+function normalizeTagValues(values: string[]): string[] {
+  const seen = new Set<string>();
+
+  return values
+    .map((value) => value.trim())
+    .filter((value) => {
+      if (!value) return false;
+      const normalized = value.toLowerCase();
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+}
+
+export async function saveCandidateAdditionalDetails(data: CandidateAdditionalDetailsInput): Promise<void> {
+  const userId = await requireAuthenticatedCandidateUserId();
+
+  await provider.saveCandidateAdditionalDetails({
+    userId,
+    education: data.education.map((row) => ({
+      degree: normalize(row.degree),
+      institution: normalize(row.institution),
+    })),
+    languages: normalizeTagValues(data.languages),
+    certifications: normalizeTagValues(data.certifications),
+    skills: normalizeTagValues(data.skills),
+  } satisfies CandidateAdditionalDetailsWriteInput);
+}
+
+export async function completeCandidateOnboarding(data?: CandidateAdditionalDetailsInput): Promise<void> {
+  const userId = await requireAuthenticatedCandidateUserId();
+
+  if (data) {
+    await provider.saveCandidateAdditionalDetails({
+      userId,
+      education: data.education.map((row) => ({
+        degree: normalize(row.degree),
+        institution: normalize(row.institution),
+      })),
+      languages: normalizeTagValues(data.languages),
+      certifications: normalizeTagValues(data.certifications),
+      skills: normalizeTagValues(data.skills),
+    });
+  }
 
   await provider.saveCandidateProfile({
     userId,

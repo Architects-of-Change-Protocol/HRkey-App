@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
 import type {
+  CandidateAdditionalDetailsWriteInput,
   CandidateCVUploadInput,
   CandidateCVUploadResult,
   CandidateProfileRecord,
@@ -18,6 +19,12 @@ function parseMissingColumn(error: { message?: string } | null): string | null {
   const message = error?.message || "";
   const match = message.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of\s+relation\s+"profiles"\s+does\s+not\s+exist/i);
   return match?.[1] ?? null;
+}
+
+function isMissingRelationError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === "42P01") return true;
+  return /relation\s+"?[a-zA-Z0-9_]+"?\s+does\s+not\s+exist/i.test(error.message || "");
 }
 
 async function persistProfilePayload(payload: Record<string, unknown>): Promise<CandidateProfileRecord> {
@@ -58,6 +65,9 @@ export class SupabaseStorageProvider implements StorageProvider {
     withDefinedField(payload, "account_type", input.account_type ?? "candidate");
     withDefinedField(payload, "onboarding_complete", input.onboarding_complete);
     withDefinedField(payload, "cv_url", input.cv_url);
+    withDefinedField(payload, "onboarding_details", input.onboarding_details);
+    withDefinedField(payload, "profile_meta", input.profile_meta);
+    withDefinedField(payload, "metadata", input.metadata);
 
     return persistProfilePayload(payload);
   }
@@ -122,5 +132,52 @@ export class SupabaseStorageProvider implements StorageProvider {
     if (insertError) {
       throw insertError;
     }
+  }
+
+  async saveCandidateAdditionalDetails(input: CandidateAdditionalDetailsWriteInput): Promise<void> {
+    const normalizedEducation = input.education.filter((row) => Boolean(row.degree || row.institution));
+
+    const { error: deleteEducationError } = await supabase
+      .from("profile_education")
+      .delete()
+      .eq("profile_id", input.userId)
+      .eq("source", "onboarding_details");
+
+    if (deleteEducationError && !isMissingRelationError(deleteEducationError)) {
+      throw deleteEducationError;
+    }
+
+    const canWriteEducation = !deleteEducationError || !isMissingRelationError(deleteEducationError);
+
+    if (canWriteEducation && normalizedEducation.length > 0) {
+      const educationRows = normalizedEducation.map((row, index) => ({
+        profile_id: input.userId,
+        sort_order: index,
+        institution: row.institution,
+        degree: row.degree,
+        field_of_study: null,
+        source: "onboarding_details",
+      }));
+
+      const { error: insertEducationError } = await supabase.from("profile_education").insert(educationRows);
+
+      if (insertEducationError && !isMissingRelationError(insertEducationError)) {
+        throw insertEducationError;
+      }
+    }
+
+    const detailsPayload = {
+      education: normalizedEducation,
+      languages: input.languages,
+      certifications: input.certifications,
+      skills: input.skills,
+    };
+
+    await this.saveCandidateProfile({
+      userId: input.userId,
+      onboarding_details: detailsPayload,
+      profile_meta: detailsPayload,
+      metadata: detailsPayload,
+    });
   }
 }
