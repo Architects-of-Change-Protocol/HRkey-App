@@ -7,6 +7,9 @@ export type CandidateProfileRecord = {
   account_type?: string | null;
   onboarding_complete?: boolean | null;
   cv_url?: string | null;
+  onboarding_details?: Record<string, unknown> | null;
+  profile_meta?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
   updated_at?: string | null;
 };
 
