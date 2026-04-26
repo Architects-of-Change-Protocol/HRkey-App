@@ -36,6 +36,9 @@
     .user-name-display { background: rgba(0,196,199,0.15); padding: 8px 16px; border-radius: 25px; font-size: 14px; margin-right: 10px; }
     .main-content { padding: 30px 0; background: #0a0a0a; }
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 40px; }
+    .referee-dashboard { margin-bottom: 30px; }
+    .referee-dashboard h2 { color: #fff; margin-bottom: 14px; font-size: 24px; }
+    .referee-dashboard .subtitle { color: #94a3b8; margin-bottom: 16px; font-size: 14px; }
     .stat-card { background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%); border-radius: 15px; padding: 25px; box-shadow: 0 4px 15px rgba(0,196,199,0.1); border-left: 4px solid #00C4C7; transition: transform 0.3s ease, box-shadow 0.3s ease; }
     .stat-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,196,199,0.3); }
     .stat-card h3 { font-size: 14px; color: #00C4C7; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -251,6 +254,18 @@
           <div class="label">Available balance</div>
         </div>
       </div>
+
+      <section class="referee-dashboard" id="refereeDashboard" style="display:none;">
+        <h2>📌 Referee Dashboard</h2>
+        <p class="subtitle">Imported from your recent invite activity.</p>
+        <div class="stats-grid">
+          <div class="stat-card"><h3>My References Given</h3><div class="number" id="refGivenCount">0</div><div class="label">Submitted references</div></div>
+          <div class="stat-card"><h3>Reusable References</h3><div class="number" id="refReusableCount">0</div><div class="label">Ready to reuse</div></div>
+          <div class="stat-card"><h3>Pending Requests</h3><div class="number" id="refPendingCount">0</div><div class="label">Need your response</div></div>
+          <div class="stat-card"><h3>Earnings (coming soon)</h3><div class="number" id="refEarningsStatus">—</div><div class="label">Feature in progress</div></div>
+          <div class="stat-card"><h3>Trust Score</h3><div class="number" id="refTrustScore">0</div><div class="label">Based on reference quality</div></div>
+        </div>
+      </section>
 
       <!-- Alert Messages -->
       <div id="alertContainer"></div>
@@ -495,9 +510,12 @@
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
+            const knownAccounts = JSON.parse(localStorage.getItem('hrkey_accounts') || '{}');
+            const accountByEmail = knownAccounts[(session.user.email || '').toLowerCase()] || null;
             isAuthenticated = true;
             user = {
-              name: session.user.user_metadata?.full_name || session.user.email || 'User',
+              ...accountByEmail,
+              name: accountByEmail?.name || session.user.user_metadata?.full_name || session.user.email || 'User',
               email: session.user.email,
               wallet: userData?.wallet || 'Not connected',
               authenticated: true
@@ -553,6 +571,7 @@
 
         // Update UI
         this.updateUserInfo();
+        this.renderRefereeDashboard();
         this.loadReferences();
         this.updateStats();
         this.checkUpgradeBanner();
@@ -564,6 +583,21 @@
           this.user.wallet && this.user.wallet !== 'Not connected'
             ? `${this.user.wallet.slice(0, 6)}...${this.user.wallet.slice(-4)}`
             : 'Not connected';
+      },
+
+      renderRefereeDashboard() {
+        const section = document.getElementById('refereeDashboard');
+        const activities = Array.isArray(this.user?.inviteActivity) ? this.user.inviteActivity : [];
+        if (!section || activities.length === 0) return;
+
+        const last = activities[activities.length - 1] || {};
+        const stats = last.stats || {};
+        section.style.display = 'block';
+        document.getElementById('refGivenCount').textContent = String(stats.myReferencesGiven || activities.length || 0);
+        document.getElementById('refReusableCount').textContent = String(stats.reusableReferences || 0);
+        document.getElementById('refPendingCount').textContent = String(stats.pendingRequests || 0);
+        document.getElementById('refEarningsStatus').textContent = 'Soon';
+        document.getElementById('refTrustScore').textContent = String(stats.trustScore || 0);
       },
 
       loadReferences() {

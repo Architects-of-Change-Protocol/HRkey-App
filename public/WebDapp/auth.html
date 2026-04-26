@@ -128,6 +128,7 @@
       <div class="referee-banner" id="refereeBanner">
         <h3>🎉 Thanks for providing a reference!</h3>
         <p>You've seen how HRKey works. Now create your own profile and start building your decentralized professional reputation with blockchain-verified references.</p>
+        <button class="btn-primary" id="oneTapBtn" style="margin-top: 12px; padding: 12px 18px;">⚡ One-tap onboarding</button>
       </div>
 
       <!-- Coupon banner -->
@@ -148,6 +149,15 @@
         <div class="form-group">
           <label for="email">Email Address</label>
           <input type="email" id="email" placeholder="your.email@company.com" required>
+        </div>
+        <div class="form-group">
+          <label for="roleType">Your relationship role</label>
+          <select id="roleType" style="width:100%; padding:14px; border:2px solid #e2e8f0; border-radius:10px; font-size:14px; font-family:'Rubik', Arial, sans-serif;">
+            <option value="">Select role</option>
+            <option value="manager">Manager</option>
+            <option value="peer">Peer</option>
+            <option value="client">Client</option>
+          </select>
         </div>
 
         <button type="submit" class="btn-primary" id="submitBtn">🚀 Create Free Account</button>
@@ -204,14 +214,96 @@
 
     // ============== REFEREE BANNER ==============
     const refereeInfo = localStorage.getItem("hrkey_referee_info");
+    const refereeSessionRaw = localStorage.getItem("referee_session");
+    const emailInput = document.getElementById("email");
+    const nameInput = document.getElementById("name");
+    const roleSelect = document.getElementById("roleType");
+    const oneTapBtn = document.getElementById("oneTapBtn");
+    let parsedRefereeInfo = null;
+    let parsedRefereeSession = null;
+
+    const normalizeInviteRole = (value = "") => {
+      const raw = String(value).toLowerCase();
+      if (raw.includes("manager")) return "manager";
+      if (raw.includes("client")) return "client";
+      return "peer";
+    };
+
+    const buildInviteActivity = () => {
+      if (!parsedRefereeInfo) return null;
+      const ratings = Array.isArray(parsedRefereeInfo.kpis) ? parsedRefereeInfo.kpis : [];
+      const avgRating = ratings.length
+        ? ratings.reduce((acc, row) => acc + Number(row.rating || 0), 0) / ratings.length
+        : 0;
+      return {
+        importedAt: new Date().toISOString(),
+        role: normalizeInviteRole(parsedRefereeInfo.relation || parsedRefereeInfo.role),
+        requestId: parsedRefereeSession?.requestId || parsedRefereeInfo.refId || `ref-${Date.now()}`,
+        reference: {
+          overall: parsedRefereeInfo.overall || "",
+          recommend: Boolean(parsedRefereeInfo.recommend),
+          kpis: ratings
+        },
+        stats: {
+          myReferencesGiven: 1,
+          reusableReferences: parsedRefereeInfo.recommend ? 1 : 0,
+          pendingRequests: 0,
+          earnings: "coming_soon",
+          trustScore: Math.round(Math.min(100, avgRating * 20))
+        }
+      };
+    };
+
+    const upsertLocalAccount = ({ name, email, role, provider }) => {
+      if (!email) return null;
+      const accounts = JSON.parse(localStorage.getItem("hrkey_accounts") || "{}");
+      const key = email.trim().toLowerCase();
+      const existing = accounts[key] || {};
+      const inviteActivity = buildInviteActivity();
+      const mergedActivity = [
+        ...(existing.inviteActivity || []),
+        ...(inviteActivity ? [inviteActivity] : [])
+      ];
+      const account = {
+        ...existing,
+        email: key,
+        name: name || existing.name || "HRKey User",
+        role: role || existing.role || "peer",
+        provider: provider || existing.provider || "email",
+        inviteActivity: mergedActivity,
+        lastLoginAt: new Date().toISOString()
+      };
+      accounts[key] = account;
+      localStorage.setItem("hrkey_accounts", JSON.stringify(accounts));
+      return { account, existed: Boolean(existing.email) };
+    };
+
     if (refereeInfo) {
       try {
         const data = JSON.parse(refereeInfo);
+        parsedRefereeInfo = data;
         if (data.hasProvidedReference) {
           document.getElementById("refereeBanner").classList.add("active");
           document.getElementById("headerSubtitle").textContent = "Now build your own verified profile!";
         }
       } catch {}
+    }
+    if (refereeSessionRaw) {
+      try {
+        parsedRefereeSession = JSON.parse(refereeSessionRaw);
+      } catch {}
+    }
+
+    const knownEmail = parsedRefereeSession?.refereeEmail || parsedRefereeInfo?.email || "";
+    if (knownEmail && emailInput) emailInput.value = knownEmail;
+    if (parsedRefereeInfo && roleSelect) roleSelect.value = normalizeInviteRole(parsedRefereeInfo.relation || parsedRefereeInfo.role);
+    if (oneTapBtn) {
+      oneTapBtn.addEventListener("click", () => {
+        if (nameInput && !nameInput.value.trim()) nameInput.value = parsedRefereeInfo?.yourName || "New Referee";
+        if (emailInput && !emailInput.value.trim() && knownEmail) emailInput.value = knownEmail;
+        if (roleSelect && !roleSelect.value) roleSelect.value = normalizeInviteRole(parsedRefereeInfo?.relation || parsedRefereeInfo?.role);
+        form?.requestSubmit();
+      });
     }
 
     // ============== SUPABASE CALLBACK ============
@@ -226,6 +318,22 @@
         if (error) {
           console.error("exchangeCodeForSession error:", error);
         } else {
+          const { data: { session } } = await supabase.auth.getSession();
+          const role = roleSelect?.value || normalizeInviteRole(parsedRefereeInfo?.relation || parsedRefereeInfo?.role);
+          const merged = upsertLocalAccount({
+            name: session?.user?.user_metadata?.full_name || session?.user?.email || "HRKey User",
+            email: session?.user?.email || knownEmail,
+            role,
+            provider: "google"
+          });
+          if (merged?.account) {
+            localStorage.setItem("hrkey_user_data", JSON.stringify({
+              ...merged.account,
+              wallet: "Not connected",
+              authenticated: true,
+              source: merged.existed ? "referee_login_merge" : "referee_signup_google"
+            }));
+          }
           const next = url.searchParams.get("next") || "/WebDapp/app.html";
           history.replaceState({}, document.title, "/auth"); // limpia ?code
           window.location.replace(next);
@@ -254,13 +362,16 @@
         // Simulación de alta local (demo)
         const name = document.getElementById("name")?.value?.trim() || "";
         const email = document.getElementById("email")?.value?.trim() || "";
+        const role = document.getElementById("roleType")?.value || normalizeInviteRole(parsedRefereeInfo?.relation || parsedRefereeInfo?.role);
+        const merged = upsertLocalAccount({ name, email, role, provider: "email" });
         const userData = {
-          name,
-          email,
+          ...(merged?.account || {}),
+          name: name || merged?.account?.name || "HRKey User",
+          email: (email || merged?.account?.email || "").toLowerCase(),
           wallet: "0x" + Math.random().toString(16).slice(2).padEnd(40, "0"),
           authenticated: true,
           loginDate: new Date().toISOString(),
-          source: refereeInfo ? "referee_conversion" : "direct_signup"
+          source: merged?.existed ? "referee_login_merge" : (refereeInfo ? "referee_conversion" : "direct_signup")
         };
         localStorage.setItem("hrkey_user_data", JSON.stringify(userData));
         localStorage.setItem("hrkey_user_plan", JSON.stringify({
