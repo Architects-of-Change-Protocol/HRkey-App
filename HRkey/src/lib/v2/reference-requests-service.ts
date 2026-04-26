@@ -1,7 +1,7 @@
 import { apiGet, apiPost } from "@/lib/apiClient";
 import { supabase } from "@/lib/supabaseClient";
 
-export type ReferenceRequestLifecycleStatus = "Pending" | "Partial" | "Completed" | "Expired";
+export type ReferenceRequestLifecycleStatus = "pending" | "opened" | "started" | "completed" | "expired";
 
 export interface CandidateReferenceRequest {
   id: string;
@@ -11,6 +11,11 @@ export interface CandidateReferenceRequest {
   company: string;
   role: string;
   requestedAt: string;
+  sentAt: string;
+  openedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  expiredAt: string | null;
   status: ReferenceRequestLifecycleStatus;
   referenceLink: string | null;
 }
@@ -50,6 +55,11 @@ type ReferenceInviteRow = {
   referee_email: string | null;
   status: string | null;
   created_at: string;
+  sent_at?: string | null;
+  opened_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  expired_at?: string | null;
   expires_at: string | null;
   metadata: {
     relationship?: string;
@@ -70,12 +80,28 @@ type ProfileExperienceRow = {
   company: string | null;
 };
 
-const toLifecycleStatus = (rawStatus: string | null | undefined): ReferenceRequestLifecycleStatus => {
-  const value = (rawStatus || "").toLowerCase();
-  if (value === "completed") return "Completed";
-  if (value === "processing") return "Partial";
-  if (value === "expired" || value === "cancelled") return "Expired";
-  return "Pending";
+const statusPriority: ReferenceRequestLifecycleStatus[] = ["completed", "started", "opened", "expired", "pending"];
+
+export const toLifecycleStatus = (row: {
+  status?: string | null;
+  openedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  expiredAt?: string | null;
+  expiresAt?: string | null;
+}): ReferenceRequestLifecycleStatus => {
+  const raw = (row.status || "").toLowerCase();
+  const now = Date.now();
+  const isExpiredByDate = Boolean(row.expiresAt && new Date(row.expiresAt).getTime() < now && !row.completedAt);
+
+  const derived: ReferenceRequestLifecycleStatus[] = [];
+  if (raw === "completed" || row.completedAt) derived.push("completed");
+  if (raw === "started" || raw === "processing" || row.startedAt) derived.push("started");
+  if (raw === "opened" || raw === "viewed" || row.openedAt) derived.push("opened");
+  if (raw === "expired" || raw === "cancelled" || row.expiredAt || isExpiredByDate) derived.push("expired");
+  derived.push("pending");
+
+  return statusPriority.find((status) => derived.includes(status)) || "pending";
 };
 
 const resolveLinkFromResponse = (payload: RequestCreationApiResponse) =>
@@ -110,10 +136,7 @@ export async function createReferenceRequest(input: CreateReferenceRequestInput)
 async function fetchProfileExperienceMap(profileIds: string[]) {
   if (profileIds.length === 0) return new Map<string, ProfileExperienceRow>();
 
-  const { data } = await supabase
-    .from("profile_experiences")
-    .select("id, title, company")
-    .in("id", profileIds);
+  const { data } = await supabase.from("profile_experiences").select("id, title, company").in("id", profileIds);
 
   const rows = (data || []) as ProfileExperienceRow[];
   return new Map(rows.map((row) => [row.id, row]));
@@ -122,7 +145,9 @@ async function fetchProfileExperienceMap(profileIds: string[]) {
 async function fetchViaSupabase(candidateId: string): Promise<CandidateReferenceRequest[]> {
   const { data, error } = await supabase
     .from("reference_invites")
-    .select("id, referee_name, referee_email, status, created_at, expires_at, metadata, profile_experience_id")
+    .select(
+      "id, referee_name, referee_email, status, created_at, sent_at, opened_at, started_at, completed_at, expired_at, expires_at, metadata, profile_experience_id"
+    )
     .eq("requester_id", candidateId)
     .order("created_at", { ascending: false });
 
@@ -137,32 +162,52 @@ async function fetchViaSupabase(candidateId: string): Promise<CandidateReference
 
   return rows.map((row) => {
     const experience = row.profile_experience_id ? experienceMap.get(row.profile_experience_id) : undefined;
+    const sentAt = row.sent_at || row.created_at;
+
     return {
       id: row.id,
-      refereeName: row.referee_name || "Unknown referee",
+      refereeName: row.referee_name || row.metadata?.referee_name || "Unknown referee",
       refereeEmail: row.referee_email || "—",
-      relationship: row.metadata?.relationship || "colleague",
+      relationship: row.metadata?.relationship || "Colleague",
       company: row.metadata?.company || experience?.company || "—",
       role: row.metadata?.role || experience?.title || "Reference request",
-      requestedAt: row.created_at,
-      status: toLifecycleStatus(row.status),
+      requestedAt: sentAt,
+      sentAt,
+      openedAt: row.opened_at || null,
+      startedAt: row.started_at || null,
+      completedAt: row.completed_at || null,
+      expiredAt: row.expired_at || row.expires_at || null,
+      status: toLifecycleStatus({
+        status: row.status,
+        openedAt: row.opened_at,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        expiredAt: row.expired_at,
+        expiresAt: row.expires_at,
+      }),
       referenceLink: null,
     };
   });
 }
 
 export async function fetchCandidateReferenceRequests(candidateId: string): Promise<CandidateReferenceRequest[]> {
-  const apiCandidates = [
-    "/api/references/requests",
-    "/api/references/my-requests",
-    "/api/reference/requests",
-  ];
+  const apiCandidates = ["/api/references/requests", "/api/references/my-requests", "/api/reference/requests"];
 
   for (const path of apiCandidates) {
     try {
       const response = await apiGet<{ requests?: CandidateReferenceRequest[] }>(path);
       if (Array.isArray(response?.requests)) {
-        return response.requests;
+        return response.requests.map((row) => ({
+          ...row,
+          sentAt: row.sentAt || row.requestedAt,
+          status: toLifecycleStatus({
+            status: row.status,
+            openedAt: row.openedAt,
+            startedAt: row.startedAt,
+            completedAt: row.completedAt,
+            expiredAt: row.expiredAt,
+          }),
+        }));
       }
     } catch {
       // fallback chain
@@ -175,6 +220,6 @@ export async function fetchCandidateReferenceRequests(candidateId: string): Prom
 export function calculateReferenceMetrics(rows: Array<{ status: ReferenceRequestLifecycleStatus }>) {
   return {
     requested: rows.length,
-    verified: rows.filter((row) => row.status === "Completed").length,
+    verified: rows.filter((row) => row.status === "completed").length,
   };
 }

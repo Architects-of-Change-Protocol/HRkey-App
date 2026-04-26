@@ -133,7 +133,7 @@ export default function CandidateDashboardV2Page() {
         if (!mounted) return;
         setProfile(currentProfile);
         setSubmittedReferences(referenceRows);
-        setPendingRequests(requestRows.filter((row) => row.status === "Pending" || row.status === "Partial"));
+        setPendingRequests(requestRows.filter((row) => ["pending", "opened", "started"].includes(row.status)));
       } catch (error) {
         if (!mounted) return;
 
@@ -266,7 +266,7 @@ export default function CandidateDashboardV2Page() {
                       <p className="text-sm font-semibold text-slate-900">{request.company || request.refereeName}</p>
                       <p className="text-xs text-slate-600">Purpose: {request.role || request.relationship}</p>
                     </div>
-                    <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">{request.status}</span>
+                    <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">{request.status.charAt(0).toUpperCase() + request.status.slice(1)}</span>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">Age: {formatAge(request.requestedAt)}</p>
                   <div className="mt-3 flex flex-wrap gap-2">

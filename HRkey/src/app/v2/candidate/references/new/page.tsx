@@ -484,10 +484,10 @@ export default function NewReferenceRequestPage() {
 
             <button
               type="button"
-              onClick={() => router.push("/v2/candidate/dashboard")}
+              onClick={() => router.push("/v2/candidate/references/requests")}
               className="rounded-[var(--radius)] bg-[var(--teal-primary)] px-4 py-2 text-sm font-semibold text-white"
             >
-              Back to candidate dashboard
+              Go to Requests Center
             </button>
           </section>
         )}
