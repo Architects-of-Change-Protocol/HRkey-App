@@ -1,12 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-type UserType = "candidate" | "company" | "referee" | "unknown";
+type UserType = "candidate" | "company" | "referee" | "admin" | "unknown";
 
 interface V2ShellProps {
   title: string;
   subtitle: string;
-  active?: "auth" | "onboarding" | "candidate-dashboard" | "company-dashboard" | "referee-dashboard";
+  active?: "auth" | "onboarding" | "candidate-dashboard" | "company-dashboard" | "referee-dashboard" | "admin-trust";
   userType?: UserType;
   children: ReactNode;
 }
@@ -32,6 +32,7 @@ export default function V2Shell({ title, subtitle, active, userType = "unknown",
               <Link className={linkClass} href="/v2/candidate/dashboard">Candidate</Link>
               <Link className={linkClass} href="/v2/company/dashboard">Company</Link>
               <Link className={linkClass} href="/v2/referee/dashboard">Referee</Link>
+              <Link className={linkClass} href="/v2/admin/trust">Admin Trust</Link>
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2 text-xs">
@@ -40,6 +41,7 @@ export default function V2Shell({ title, subtitle, active, userType = "unknown",
             <StatusPill label="Candidate Dashboard" active={active === "candidate-dashboard" || userType === "candidate"} />
             <StatusPill label="Company Dashboard" active={active === "company-dashboard" || userType === "company"} />
             <StatusPill label="Referee Dashboard" active={active === "referee-dashboard" || userType === "referee"} />
+            <StatusPill label="Admin Trust" active={active === "admin-trust" || userType === "admin"} />
           </div>
         </header>
 
