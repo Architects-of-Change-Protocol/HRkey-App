@@ -6,7 +6,7 @@ const heroStats = [
   { label: "Reusable References", value: "11", detail: "Ready to share" },
   { label: "Pending Requests", value: "4", detail: "Needs your response" },
   { label: "Trust Score", value: "96", detail: "Top 8% on HRKey" },
-  { label: "Earnings", value: "Coming soon", detail: "Monetization beta" },
+  { label: "Earnings", value: "$1,840", detail: "Available in wallet" },
 ] as const;
 
 const givenReferences = [
@@ -116,6 +116,46 @@ export default function RefereeDashboardV2Page() {
               <p className="mt-1 text-xs text-slate-600">Manager history: 8 years leading teams of 6–20 people.</p>
             </section>
           </div>
+        </section>
+
+
+        <section className="grid gap-4 lg:grid-cols-2">
+          <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Referee Earnings Wallet</p>
+            <h3 className="mt-1 text-lg font-bold text-slate-900">$1,840 available</h3>
+            <p className="mt-1 text-sm text-slate-700">Earned from reusable reference purchases and direct request responses.</p>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <div className="rounded-lg bg-white p-2">
+                <p className="text-slate-500">This week</p>
+                <p className="font-semibold text-slate-900">$320</p>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <p className="text-slate-500">Pending</p>
+                <p className="font-semibold text-slate-900">$120</p>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <p className="text-slate-500">Paid out</p>
+                <p className="font-semibold text-slate-900">$7,460</p>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button type="button" className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Withdraw funds</button>
+              <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View payouts</button>
+            </div>
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-base font-semibold text-slate-900">Recent Monetization Activity</h3>
+            <div className="mt-3 space-y-2">
+              {[
+                "Stripe purchased your Engineer reusable reference (+$95)",
+                "Airtable requested custom follow-up details (+$40)",
+                "Notion unlocked Sales leadership reference (+$70)",
+              ].map((item) => (
+                <p key={item} className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">{item}</p>
+              ))}
+            </div>
+          </article>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4">
