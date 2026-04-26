@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import V2Shell from "@/components/v2/V2Shell";
+import { supabase } from "@/lib/supabaseClient";
 import {
   buildMarketplaceTransaction,
   DEFAULT_COMPANY_LEDGER,
@@ -10,6 +11,7 @@ import {
   persistCompanyLedger,
   type MarketplaceLedger,
 } from "@/lib/v2/marketplace-engine";
+import { getCompanyDashboardMetrics, type CompanyDashboardMetrics } from "@/lib/v2/trust-dashboard-service";
 
 type MarketplaceReference = {
   id: string;
@@ -136,6 +138,7 @@ function avgRating(reviews: MarketplaceReference["reviews"]) {
 
 export default function CompanyDashboardV2Page() {
   const [ledger, setLedger] = useState<MarketplaceLedger>(DEFAULT_COMPANY_LEDGER);
+  const [metrics, setMetrics] = useState<CompanyDashboardMetrics | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("All");
   const [sortBy, setSortBy] = useState<SortOption>("trust");
   const [query, setQuery] = useState("");
@@ -144,6 +147,26 @@ export default function CompanyDashboardV2Page() {
 
   useEffect(() => {
     setLedger(loadCompanyLedger());
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateMetrics = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const userId = data.user?.id;
+        if (!userId) return;
+        const dashboard = await getCompanyDashboardMetrics(userId);
+        if (!mounted) return;
+        setMetrics(dashboard);
+      } catch (error) {
+        console.error("[v2 company dashboard] failed to hydrate metrics", error);
+      }
+    };
+    hydrateMetrics();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -181,12 +204,6 @@ export default function CompanyDashboardV2Page() {
   const purchasedReferences = useMemo(
     () => marketplaceReferences.filter((reference) => ledger.purchasedIds.includes(reference.id)),
     [ledger.purchasedIds],
-  );
-
-  const companySpend = useMemo(() => ledger.transactions.reduce((sum, tx) => sum + tx.amountCredits, 0), [ledger.transactions]);
-  const hrkeyRevenue = useMemo(
-    () => ledger.transactions.reduce((sum, tx) => sum + tx.hrkeyRevenueCredits, 0),
-    [ledger.transactions],
   );
 
   const toggleWatchlist = (referenceId: string) => {
@@ -242,7 +259,7 @@ export default function CompanyDashboardV2Page() {
             </div>
             <div className="rounded-xl border border-teal-500/30 bg-slate-900 p-4 text-right shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Available credits</p>
-              <p className="mt-1 text-3xl font-bold text-white">{ledger.walletCredits.toFixed(2)}</p>
+              <p className="mt-1 text-3xl font-bold text-white">{(metrics?.credits_balance ?? ledger.walletCredits).toFixed(2)}</p>
               <button
                 type="button"
                 onClick={() => setTopUpOpen(true)}
@@ -253,9 +270,9 @@ export default function CompanyDashboardV2Page() {
             </div>
           </div>
           <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
-            <p className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">Total company spend: <span className="font-semibold">{companySpend.toFixed(2)} credits</span></p>
-            <p className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">HRKey platform revenue: <span className="font-semibold">{hrkeyRevenue.toFixed(2)} credits</span></p>
-            <p className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">Saved watchlist profiles: <span className="font-semibold">{ledger.watchlist.length}</span></p>
+            <p className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">Purchases made: <span className="font-semibold">{metrics?.purchases_made ?? ledger.transactions.length}</span></p>
+            <p className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">Useful references: <span className="font-semibold">{(metrics?.useful_references_pct ?? 0).toFixed(1)}%</span></p>
+            <p className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">Saved referees: <span className="font-semibold">{metrics?.saved_referees ?? ledger.watchlist.length}</span></p>
           </div>
         </section>
 
