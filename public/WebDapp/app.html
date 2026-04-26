@@ -253,6 +253,11 @@
           <div class="number" id="statEarnings">$0</div>
           <div class="label">Available balance</div>
         </div>
+        <div class="stat-card" onclick="window.location='/WebDapp/reusable-reference-engine.html'" style="cursor: pointer;">
+          <h3>Reusable Ref Earnings</h3>
+          <div class="number" id="statReusableEarnings">$0</div>
+          <div class="label">From template re-use</div>
+        </div>
       </div>
 
       <section class="referee-dashboard" id="refereeDashboard" style="display:none;">
@@ -262,7 +267,7 @@
           <div class="stat-card"><h3>My References Given</h3><div class="number" id="refGivenCount">0</div><div class="label">Submitted references</div></div>
           <div class="stat-card"><h3>Reusable References</h3><div class="number" id="refReusableCount">0</div><div class="label">Ready to reuse</div></div>
           <div class="stat-card"><h3>Pending Requests</h3><div class="number" id="refPendingCount">0</div><div class="label">Need your response</div></div>
-          <div class="stat-card"><h3>Earnings (coming soon)</h3><div class="number" id="refEarningsStatus">—</div><div class="label">Feature in progress</div></div>
+          <div class="stat-card"><h3>Reusable Earnings</h3><div class="number" id="refEarningsStatus">$0</div><div class="label">Monetizable references</div></div>
           <div class="stat-card"><h3>Trust Score</h3><div class="number" id="refTrustScore">0</div><div class="label">Based on reference quality</div></div>
         </div>
       </section>
@@ -596,7 +601,7 @@
         document.getElementById('refGivenCount').textContent = String(stats.myReferencesGiven || activities.length || 0);
         document.getElementById('refReusableCount').textContent = String(stats.reusableReferences || 0);
         document.getElementById('refPendingCount').textContent = String(stats.pendingRequests || 0);
-        document.getElementById('refEarningsStatus').textContent = 'Soon';
+        document.getElementById('refEarningsStatus').textContent = this.calculateReusableEarningsLabel();
         document.getElementById('refTrustScore').textContent = String(stats.trustScore || 0);
       },
 
@@ -671,6 +676,16 @@
         container.innerHTML = tableHTML;
       },
 
+      calculateReusableEarningsLabel() {
+        try {
+          const templates = JSON.parse(localStorage.getItem('hrkey_reusable_reference_templates') || '[]');
+          const total = templates.reduce((sum, t) => sum + Number(t.totalEarnings || 0), 0);
+          return `$${total.toFixed(0)}`;
+        } catch {
+          return '$0';
+        }
+      },
+
       updateStats() {
         const total = this.references.length;
         const pending = this.references.filter(r => r.status === 'pending').length;
@@ -681,6 +696,9 @@
         document.getElementById('statPending').textContent = pending;
         document.getElementById('statCompleted').textContent = completed;
         document.getElementById('statBlockchain').textContent = blockchain;
+
+        const reusableEl = document.getElementById('statReusableEarnings');
+        if (reusableEl) reusableEl.textContent = this.calculateReusableEarningsLabel();
 
         // Load new stats: Data Access Requests & Earnings
         this.loadDataAccessStats();

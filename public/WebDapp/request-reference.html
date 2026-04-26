@@ -98,6 +98,25 @@
           </div>
         </div>
 
+
+        <div class="row row-1" style="margin-top: 22px;">
+          <div class="kpi-box" style="border-left-color:#fbbf24;background:rgba(251,191,36,0.08)">
+            <h3 style="color: #fbbf24; margin: 0 0 10px 0; font-size: 18px;">♻️ Request Existing Reusable Reference</h3>
+            <p style="color: #cbd5e1; font-size: 13px; margin: 0 0 12px 0;">If a reusable reference template exists, candidate can request it with one click.</p>
+            <div class="row">
+              <div>
+                <label for="existingTemplateSelect">Reusable template</label>
+                <select id="existingTemplateSelect">
+                  <option value="">No reusable template selected</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:end;">
+                <button type="button" class="btn-secondary" id="useTemplateBtn">Use selected reusable reference</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- KPIs Section -->
         <div class="row row-1" style="margin-top: 30px;">
           <div class="kpi-box">
@@ -277,6 +296,44 @@
       }
     }
 
+
+    function loadReusableTemplateOptions() {
+      const select = document.getElementById('existingTemplateSelect');
+      if (!select) return;
+      let templates = [];
+      try { templates = JSON.parse(localStorage.getItem('hrkey_reusable_reference_templates') || '[]'); } catch {}
+      const active = templates.filter(t => new Date(t.expiresAt) > new Date());
+      active.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        const pricing = t.pricing?.mode === 'paid' ? ` · $${Number(t.pricing?.price || 0).toFixed(0)}` : ` · ${t.pricing?.mode || 'free'}`;
+        opt.textContent = `${t.sourceRefereeName || 'Template'} (${t.privacy || 'full'}${pricing})`;
+        select.appendChild(opt);
+      });
+    }
+
+    function useSelectedReusableTemplate() {
+      const id = document.getElementById('existingTemplateSelect')?.value;
+      if (!id) { showAlert('Select a reusable template first.', 'error'); return; }
+      let templates = [];
+      try { templates = JSON.parse(localStorage.getItem('hrkey_reusable_reference_templates') || '[]'); } catch {}
+      const t = templates.find(x => x.id === id);
+      if (!t) { showAlert('Template not found.', 'error'); return; }
+
+      document.getElementById('refereeName').value = t.sourceRefereeName || '';
+      document.getElementById('company').value = 'Reusable reference template';
+      document.getElementById('relationship').value = 'Other';
+      document.getElementById('message').value = `Requesting reusable reference template (${t.privacy}) for future employers.`;
+
+      const flow = {
+        templateId: t.id,
+        requestedAt: new Date().toISOString(),
+        requestedFrom: (JSON.parse(localStorage.getItem('hrkey_user_data') || '{}') || {}).email || ''
+      };
+      localStorage.setItem('hrkey_candidate_reuse_flow', JSON.stringify(flow));
+      showAlert('Reusable reference selected. Complete remaining fields and send request.', 'success');
+    }
+
     // ===== Submit =====
     async function submitReferenceRequest(e) {
       e.preventDefault();
@@ -319,7 +376,8 @@
         kpis,
         status: 'pending',
         dateRequested: new Date().toISOString(),
-        requestedBy: user.email || ''
+        requestedBy: user.email || '',
+        reusableTemplateId: document.getElementById('existingTemplateSelect')?.value || null
       };
 
       try {
@@ -356,6 +414,8 @@
       const user = loadSessionOrRedirect();
       if (!user) return;
 
+      loadReusableTemplateOptions();
+      document.getElementById('useTemplateBtn')?.addEventListener('click', useSelectedReusableTemplate);
       document.getElementById('refForm').addEventListener('submit', submitReferenceRequest);
       document.getElementById('cancelBtn').addEventListener('click', () => location.replace('./app.html'));
     });
