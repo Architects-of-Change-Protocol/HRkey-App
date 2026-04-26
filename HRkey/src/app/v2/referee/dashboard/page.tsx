@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import V2Shell from "@/components/v2/V2Shell";
 import { loadCompanyLedger, type MarketplaceTransaction } from "@/lib/v2/marketplace-engine";
+import { supabase } from "@/lib/supabaseClient";
+import { getRefereeDashboardMetrics, recalculateTrustScore, type RefereeDashboardMetrics } from "@/lib/v2/trust-dashboard-service";
 
 const givenReferences = [
   { id: "r-1", candidate: "Maya Chen", role: "Senior Product Manager", date: "Apr 22, 2026", score: "4.9" },
@@ -26,10 +28,35 @@ const referenceViews: Record<string, number> = {
 
 export default function RefereeDashboardV2Page() {
   const [transactions, setTransactions] = useState<MarketplaceTransaction[]>([]);
+  const [trustMetrics, setTrustMetrics] = useState<RefereeDashboardMetrics | null>(null);
+  const [trustLoading, setTrustLoading] = useState(true);
 
   useEffect(() => {
     const ledger = loadCompanyLedger();
     setTransactions(ledger.transactions);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateTrust = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const userId = data.user?.id;
+        if (!userId) return;
+        await recalculateTrustScore(userId);
+        const metrics = await getRefereeDashboardMetrics(userId);
+        if (!mounted) return;
+        setTrustMetrics(metrics);
+      } catch (error) {
+        console.error("[v2 referee dashboard] trust hydration failed", error);
+      } finally {
+        if (mounted) setTrustLoading(false);
+      }
+    };
+    hydrateTrust();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const lifetimeEarnings = useMemo(
@@ -65,6 +92,13 @@ export default function RefereeDashboardV2Page() {
     return (purchases / views) * 100;
   }, [transactions]);
 
+  const trustScore = Math.round(trustMetrics?.trust_score || 0);
+  const trendDirection = (trustMetrics?.growth_last_30d || 0) >= 0 ? "▲" : "▼";
+  const trendColor = (trustMetrics?.growth_last_30d || 0) >= 0 ? "text-emerald-500" : "text-rose-500";
+  const scoreRing = `conic-gradient(#14b8a6 ${trustScore * 3.6}deg, #1e293b ${trustScore * 3.6}deg)`;
+  const freshnessLabel = givenReferences[0]?.date || "No references yet";
+  const badgePills = trustMetrics?.badges?.length ? trustMetrics.badges : [...roleBadges];
+
   return (
     <V2Shell
       active="referee-dashboard"
@@ -84,12 +118,12 @@ export default function RefereeDashboardV2Page() {
             </Link>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-            {[
+              {[
               { label: "Lifetime Earnings", value: `$${lifetimeEarnings.toFixed(2)}`, detail: "70% referee split" },
               { label: "Pending Payouts", value: `$${pendingPayouts.toFixed(2)}`, detail: "Queued for payout" },
-              { label: "Transactions", value: String(transactions.length), detail: "Reusable reference sales" },
+              { label: "Transactions", value: String(trustMetrics?.purchases_generated ?? transactions.length), detail: "Reusable reference sales" },
               { label: "Conversion", value: `${conversionRate.toFixed(1)}%`, detail: "Viewed vs purchased" },
-              { label: "Trust Score", value: "96", detail: "High usefulness rating" },
+              { label: "Trust Score", value: String(trustScore), detail: trustLoading ? "Calculating..." : `${trendDirection} ${Math.abs(trustMetrics?.growth_last_30d || 0).toFixed(1)} last 30d` },
             ].map((stat) => (
               <article key={stat.label} className="rounded-xl border border-slate-800 bg-slate-900 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{stat.label}</p>
@@ -159,12 +193,26 @@ export default function RefereeDashboardV2Page() {
           <div className="space-y-4">
             <section className="rounded-2xl border border-slate-200 bg-white p-4">
               <h3 className="text-base font-semibold text-slate-900">Profile Credibility</h3>
+              <div className="mt-3 flex items-center gap-4">
+                <div className="relative h-20 w-20 rounded-full p-1" style={{ background: scoreRing }}>
+                  <div className="flex h-full w-full items-center justify-center rounded-full bg-slate-950 text-white">
+                    <span className="text-lg font-bold">{trustScore}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${trendColor}`}>{trendDirection} {Math.abs(trustMetrics?.growth_last_30d || 0).toFixed(1)} growth</p>
+                  <p className="text-xs text-slate-600" title="Trust combines completion volume, usefulness ratings, repeat buyers, profile quality, verification, and response speed; penalties apply for stale references, disputes, refunds, and poor ratings.">
+                    Why this score?
+                  </p>
+                  <p className="text-xs text-slate-500">Freshness indicator: latest update {freshnessLabel}</p>
+                </div>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {roleBadges.map((badge) => (
+                {badgePills.map((badge) => (
                   <span key={badge} className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">{badge}</span>
                 ))}
               </div>
-              <p className="mt-3 text-xs text-slate-600">Freshly updated references perform 23% better in conversions (mock signal).</p>
+              <p className="mt-3 text-xs text-slate-600">References completed: {trustMetrics?.references_completed ?? 0} · Repeat buyers: {trustMetrics?.repeat_buyers ?? 0}.</p>
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-4">
