@@ -62,3 +62,43 @@ export async function getCompanyDashboardMetrics(userId: string): Promise<Compan
   if (error) throw error;
   return data as CompanyDashboardMetrics | null;
 }
+
+
+export type TrustModerationQueueItem = {
+  referee_id: string;
+  current_trust_score: number;
+  trust_tier: string;
+  open_disputes: number;
+  refunds: number;
+  low_reviews: number;
+  last_signal_at: string;
+};
+
+export async function getTrustModerationQueue(): Promise<TrustModerationQueueItem[]> {
+  const { data, error } = await supabase
+    .from("trust_moderation_queue_v1")
+    .select("*")
+    .order("open_disputes", { ascending: false })
+    .order("refunds", { ascending: false })
+    .limit(100);
+
+  if (error) throw error;
+  return (data || []) as TrustModerationQueueItem[];
+}
+
+export async function moderateTrust(
+  refereeId: string,
+  actionType: "override_score" | "award_badge" | "revoke_badge" | "open_dispute" | "dismiss_dispute",
+  reason: string,
+  payload: Record<string, unknown> = {},
+) {
+  const { data, error } = await supabase.rpc("admin_moderate_trust", {
+    p_referee_id: refereeId,
+    p_action_type: actionType,
+    p_reason: reason,
+    p_payload: payload,
+  });
+
+  if (error) throw error;
+  return data;
+}
