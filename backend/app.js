@@ -78,6 +78,7 @@ const cvController = lazyController(() => import('./controllers/cv.controller.js
 const aocEconomyController = lazyController(() => import('./controllers/aocEconomy.controller.js'));
 const rlusdConversionController = lazyController(() => import('./controllers/rlusdConversion.controller.js'));
 const rlusdWithdrawalController = lazyController(() => import('./controllers/rlusdWithdrawal.controller.js'));
+const hrkeyTransactionEngineController = lazyController(() => import('./controllers/hrkeyTransactionEngine.controller.js'));
 
 const loadHrkeyScoreService = lazyModule(() => import('./hrkeyScoreService.js'));
 const loadScoreSnapshots = lazyModule(() => import('./services/hrscore/scoreSnapshots.js'));
@@ -1332,6 +1333,19 @@ app.get('/api/aoc/balance', requireAuth, aocEconomyController.getMyAocBalance);
 app.post('/api/aoc/topup', requireAuth, aocEconomyController.topupMyAocBalance);
 app.get('/api/aoc/transactions', requireAuth, aocEconomyController.getMyAocTransactions);
 app.get('/api/aoc/earnings-summary', requireAuth, aocEconomyController.getMyAocEarningsSummary);
+app.get('/api/hrkey/wallet', requireAuth, hrkeyTransactionEngineController.getMyWallet);
+app.post('/api/hrkey/wallet/topup-mock', requireAuth, hrkeyTransactionEngineController.postMockTopup);
+app.post('/api/hrkey/purchases', requireAuth, hrkeyTransactionEngineController.postPurchase);
+app.get('/api/hrkey/purchases', requireAuth, hrkeyTransactionEngineController.getMyPurchases);
+app.get('/api/hrkey/purchases/:purchaseId/access', requireAuth, hrkeyTransactionEngineController.getPurchaseAccess);
+app.get('/api/hrkey/purchases/:purchaseId/download', requireAuth, hrkeyTransactionEngineController.getReferencePackageDownload);
+app.post('/api/hrkey/purchases/:purchaseId/refund', requireAuth, hrkeyTransactionEngineController.postRefundRequest);
+app.post('/api/hrkey/refunds/:refundId/resolve', requireSuperadmin, hrkeyTransactionEngineController.postRefundResolution);
+app.post('/api/hrkey/favorites/:refereeUserId', requireAuth, hrkeyTransactionEngineController.postFavoriteReferee);
+app.delete('/api/hrkey/favorites/:refereeUserId', requireAuth, hrkeyTransactionEngineController.deleteFavoriteReferee);
+app.get('/api/hrkey/favorites', requireAuth, hrkeyTransactionEngineController.getFavoriteReferees);
+app.post('/api/hrkey/purchases/:purchaseId/repeat-buy', requireAuth, hrkeyTransactionEngineController.postRepeatBuy);
+app.get('/api/hrkey/analytics/dashboard', requireSuperadmin, hrkeyTransactionEngineController.getMarketplaceDashboard);
 app.post('/api/aoc/convert/quote', requireAuth, rlusdConversionController.postRlusdQuote);
 app.post('/api/aoc/convert/requests', requireAuth, rlusdConversionController.postConversionRequest);
 app.get('/api/aoc/convert/requests', requireAuth, rlusdConversionController.getConversionRequests);
