@@ -587,6 +587,7 @@ export class ReferenceService {
         referee_name: invite.referrer_name,
         referee_email: invite.referrer_email,
         expires_at: invite.expires_at,
+        metadata: invite.metadata || null,
         experience: invite.experience
           ? {
             title: invite.experience.title || null,
