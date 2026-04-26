@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reusable Reference Engine V1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#060b14; --card:#0f172a; --muted:#94a3b8; --line:#1e293b; --brand:#00c4c7; --brand2:#00d2cc; --gold:#fbbf24; --good:#10b981; }
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 10% 10%,#10203f,var(--bg));font-family:'Rubik',sans-serif;color:#e2e8f0}
+    .page{padding:16px;max-width:1100px;margin:0 auto}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+    .title{font-size:1.3rem;margin:0}.sub{color:var(--muted);margin:6px 0 0}
+    .btn{border:0;border-radius:12px;padding:10px 14px;font-weight:600;cursor:pointer}
+    .btn-brand{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#001015}
+    .btn-ghost{background:transparent;border:1px solid var(--brand);color:var(--brand);text-decoration:none;display:inline-block}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px}
+    .card{background:linear-gradient(180deg,#0f172a,#0b1323);border:1px solid var(--line);border-radius:16px;padding:14px}
+    .metric{font-size:1.4rem;font-weight:700}.label{color:var(--muted);font-size:.85rem}
+    .premium{border:1px solid rgba(251,191,36,.5);box-shadow:0 0 0 1px rgba(251,191,36,.15) inset}
+    .list{margin-top:16px;display:grid;gap:12px}
+    .item{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+    .row{display:grid;grid-template-columns:1fr;gap:10px}
+    input,select{width:100%;background:#020617;border:1px solid var(--line);border-radius:10px;color:#fff;padding:10px}
+    .pill{display:inline-block;background:rgba(16,185,129,.12);color:#6ee7b7;padding:4px 8px;border-radius:999px;font-size:.72rem}
+    .muted{color:var(--muted);font-size:.85rem}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .split{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}
+    .notice{padding:10px;border-radius:10px;background:rgba(0,196,199,.08);border:1px solid rgba(0,196,199,.3);color:#67e8f9}
+    @media(min-width:860px){.grid{grid-template-columns:repeat(4,1fr)}.row{grid-template-columns:repeat(3,1fr)}.split{grid-template-columns:1.2fr 1fr}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top">
+      <div>
+        <h1 class="title">🔁 Reusable Reference Engine V1</h1>
+        <p class="sub">Create monetizable reference templates with consent, expiration, privacy, and usage permissions.</p>
+      </div>
+      <a class="btn btn-ghost" href="/WebDapp/app.html">← Back to dashboard</a>
+    </div>
+
+    <div class="grid">
+      <div class="card premium"><div class="metric" id="mTemplates">0</div><div class="label">Reusable templates</div></div>
+      <div class="card"><div class="metric" id="mActive">0</div><div class="label">Currently active</div></div>
+      <div class="card"><div class="metric" id="mReuse">0</div><div class="label">Approved reuses</div></div>
+      <div class="card premium"><div class="metric" id="mEarn">$0</div><div class="label">Earnings from reusable references</div></div>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <h3 style="margin-top:0">Convert previous references</h3>
+        <p class="muted">Turn completed references into reusable templates.</p>
+        <div id="sourceReferences" class="list"></div>
+      </div>
+
+      <div class="card premium">
+        <h3 style="margin-top:0">Candidate Request Flow</h3>
+        <p class="muted">Candidates can request an existing reusable reference for future employers.</p>
+        <div class="notice" id="flowMessage">No request in progress yet.</div>
+        <div class="actions">
+          <button class="btn btn-brand" id="simulateRequestBtn">Simulate candidate request</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0">Reusable Templates</h3>
+      <div id="templateList" class="list"></div>
+    </div>
+  </div>
+
+<script>
+const refsKey='hrkey_references';
+const templatesKey='hrkey_reusable_reference_templates';
+
+const EXP_OPTIONS=[30,90,180];
+const PRIVACY_OPTIONS=['full','partial','anonymous summary'];
+const PRICE_OPTIONS=['free','paid','invite only'];
+
+function readJson(key,fallback=[]){try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback));}catch{return fallback;}}
+function writeJson(key,v){localStorage.setItem(key,JSON.stringify(v));}
+function fmtMoney(v){return `$${Number(v||0).toFixed(0)}`;}
+function isActive(t){return new Date(t.expiresAt)>new Date();}
+
+function init(){
+  renderSourceReferences();
+  renderTemplates();
+  document.getElementById('simulateRequestBtn').onclick=simulateCandidateRequest;
+}
+
+function renderSourceReferences(){
+  const refs=readJson(refsKey).filter(r=>r.status==='completed'&&r.evaluation);
+  const templates=readJson(templatesKey);
+  const usedIds=new Set(templates.map(t=>t.sourceReferenceId));
+  const box=document.getElementById('sourceReferences');
+  if(!refs.length){box.innerHTML='<p class="muted">No completed references available yet.</p>';return;}
+  box.innerHTML=refs.map(r=>`<div class="item">
+    <strong>${r.refereeName||'Referee'}</strong> · <span class="muted">${r.company||'Unknown company'}</span><br/>
+    <span class="muted">${(r.kpis||[]).length} KPIs captured</span>
+    <div class="actions">${usedIds.has(r.id)?'<span class="pill">Already templated</span>':`<button class="btn btn-brand" onclick="openCreateTemplate('${r.id}')">Convert to reusable template</button>`}</div>
+  </div>`).join('');
+}
+
+function openCreateTemplate(refId){
+  const refs=readJson(refsKey); const ref=refs.find(r=>r.id===refId); if(!ref) return;
+  const card=document.createElement('div'); card.className='item';
+  card.innerHTML=`<h4 style="margin:0 0 8px">Create template for ${ref.refereeName||'reference'}</h4>
+    <div class="row">
+      <div><label>One-click approve reuse</label><select id="approve_${refId}"><option value="true">Enabled</option><option value="false">Manual review only</option></select></div>
+      <div><label>Expiration</label><select id="exp_${refId}">${EXP_OPTIONS.map(v=>`<option value="${v}">${v} days</option>`).join('')}</select></div>
+      <div><label>Privacy</label><select id="privacy_${refId}">${PRIVACY_OPTIONS.map(v=>`<option>${v}</option>`).join('')}</select></div>
+    </div>
+    <div class="row">
+      <div><label>Usage: who can access</label><input id="who_${refId}" placeholder="e.g. verified recruiters only"/></div>
+      <div><label>Industries</label><input id="industry_${refId}" placeholder="e.g. fintech, SaaS"/></div>
+      <div><label>Geographies</label><input id="geo_${refId}" placeholder="e.g. US, EU"/></div>
+    </div>
+    <div class="row">
+      <div><label>Pricing toggle</label><select id="pricing_${refId}">${PRICE_OPTIONS.map(v=>`<option>${v}</option>`).join('')}</select></div>
+      <div><label>Price (if paid)</label><input id="price_${refId}" type="number" min="0" step="1" value="25"/></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-brand" onclick="createTemplate('${refId}')">Save template</button>
+    </div>`;
+  const box=document.getElementById('sourceReferences');
+  box.prepend(card);
+}
+
+function createTemplate(refId){
+  const refs=readJson(refsKey); const ref=refs.find(r=>r.id===refId); if(!ref) return;
+  const expDays=Number(document.getElementById(`exp_${refId}`).value||30);
+  const pricing=document.getElementById(`pricing_${refId}`).value;
+  const price=Number(document.getElementById(`price_${refId}`).value||0);
+  const t={
+    id:`tpl_${Date.now()}`,
+    sourceReferenceId:refId,
+    sourceRefereeName:ref.refereeName||'Referee',
+    createdAt:new Date().toISOString(),
+    expiresAt:new Date(Date.now()+expDays*86400000).toISOString(),
+    oneClickApproval:document.getElementById(`approve_${refId}`).value==='true',
+    privacy:document.getElementById(`privacy_${refId}`).value,
+    permissions:{
+      who:document.getElementById(`who_${refId}`).value.trim()||'verified employers',
+      industries:document.getElementById(`industry_${refId}`).value.trim()||'all',
+      geographies:document.getElementById(`geo_${refId}`).value.trim()||'global'
+    },
+    pricing:{mode:pricing,price:pricing==='paid'?price:0},
+    reuseCount:0,
+    totalEarnings:0
+  };
+  const templates=readJson(templatesKey); templates.push(t); writeJson(templatesKey,templates);
+  renderSourceReferences(); renderTemplates();
+}
+
+function requestReuse(templateId,candidate='candidate@sample.com'){
+  const templates=readJson(templatesKey);
+  const idx=templates.findIndex(t=>t.id===templateId); if(idx<0) return;
+  const t=templates[idx];
+  if(!isActive(t)) return alert('Template expired. Renew before reuse.');
+  if(!t.oneClickApproval) return alert('Template requires manual approval.');
+  t.reuseCount += 1;
+  if(t.pricing.mode==='paid') t.totalEarnings += Number(t.pricing.price||0);
+  templates[idx]=t; writeJson(templatesKey,templates);
+  const flow={templateId,candidate,status:'approved',at:new Date().toISOString()};
+  localStorage.setItem('hrkey_candidate_reuse_flow',JSON.stringify(flow));
+  document.getElementById('flowMessage').textContent=`Approved reuse for ${candidate} using ${t.sourceRefereeName}'s template.`;
+  renderTemplates();
+}
+
+function simulateCandidateRequest(){
+  const templates=readJson(templatesKey).filter(isActive);
+  if(!templates.length){document.getElementById('flowMessage').textContent='No active template available to request.';return;}
+  requestReuse(templates[0].id,'candidate.mobile@futurehire.com');
+}
+
+function renewTemplate(id,days){
+  const templates=readJson(templatesKey);
+  const idx=templates.findIndex(t=>t.id===id); if(idx<0) return;
+  templates[idx].expiresAt=new Date(Date.now()+days*86400000).toISOString();
+  writeJson(templatesKey,templates); renderTemplates();
+}
+
+function renderTemplates(){
+  const list=readJson(templatesKey);
+  const active=list.filter(isActive).length;
+  const reuse=list.reduce((s,t)=>s+Number(t.reuseCount||0),0);
+  const earn=list.reduce((s,t)=>s+Number(t.totalEarnings||0),0);
+  document.getElementById('mTemplates').textContent=String(list.length);
+  document.getElementById('mActive').textContent=String(active);
+  document.getElementById('mReuse').textContent=String(reuse);
+  document.getElementById('mEarn').textContent=fmtMoney(earn);
+
+  const box=document.getElementById('templateList');
+  if(!list.length){box.innerHTML='<p class="muted">No reusable templates yet.</p>';return;}
+  box.innerHTML=list.map(t=>`<div class="item">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><strong>${t.sourceRefereeName}</strong><span class="pill">${isActive(t)?'active':'expired'}</span></div>
+    <div class="muted">Privacy: ${t.privacy} · Access: ${t.permissions.who} · Industries: ${t.permissions.industries} · Geographies: ${t.permissions.geographies}</div>
+    <div class="muted">Pricing: ${t.pricing.mode}${t.pricing.mode==='paid'?` (${fmtMoney(t.pricing.price)})`:''} · One-click approval: ${t.oneClickApproval?'on':'off'}</div>
+    <div class="muted">Expires: ${new Date(t.expiresAt).toLocaleDateString()} · Reuse: ${t.reuseCount} · Earnings: ${fmtMoney(t.totalEarnings)}</div>
+    <div class="actions">
+      <button class="btn btn-brand" onclick="requestReuse('${t.id}')">One-click approve reuse</button>
+      <button class="btn btn-ghost" onclick="renewTemplate('${t.id}',30)">Renew 30d</button>
+      <button class="btn btn-ghost" onclick="renewTemplate('${t.id}',90)">Renew 90d</button>
+      <button class="btn btn-ghost" onclick="renewTemplate('${t.id}',180)">Renew 180d</button>
+    </div>
+  </div>`).join('');
+}
+
+document.addEventListener('DOMContentLoaded',init);
+</script>
+</body>
+</html>
