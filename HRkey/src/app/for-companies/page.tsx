@@ -55,7 +55,7 @@ const faqs = [
   },
 ];
 
-const signupHref = "/dashboard?intent=company";
+const signupHref = "/early-access";
 
 function B2BHero() {
   return (
