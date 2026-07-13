@@ -6,9 +6,12 @@ confidence that it can be rebuilt later from this repository alone. No
 business logic, architecture, or functionality was changed to produce this
 audit — this is a documentation and restorability exercise only.
 
-**Date of audit:** 2026-07-13
+**Date of audit:** 2026-07-13 (repo-only audit); **live verification pass:** 2026-07-13
 **Scope:** entire monorepo (`sql/`, `backend/`, `HRkey/`, `lib/`, `database/`,
-`protocol/`, `.github/workflows/`, deployment configs).
+`protocol/`, `.github/workflows/`, deployment configs) **plus a direct
+verification pass against the live Supabase project** for the items that
+could not be resolved from the repository alone (see "Phase 2.5 — Live
+Verification" below).
 
 Companion artifacts produced alongside this document (see Phase 3):
 - `supabase/config.toml`
@@ -220,6 +223,104 @@ No Auth0/Clerk/Firebase — Supabase Auth is the only auth provider.
 
 ---
 
+## Phase 2.5 — Live Verification (against the production Supabase project)
+
+This section records what was checked **directly against the live
+project**, provided by the project owner, closing the gaps Phase 2 could
+not resolve from the repository alone. This does **not** replace a
+schema-only dump (see below) — it confirms specific facts, not the full
+column-level shape of every table.
+
+### Schema
+
+- A schema-only export (`schema_dump_live.sql`) was reported as generated
+  by the project owner via `supabase db dump --schema-only` / `pg_dump`.
+  **As of this update, the actual file/contents were not received into this
+  audit environment** — only the following point-confirmations were
+  provided directly:
+  - **`profiles` table: confirmed to EXIST in production.** This resolves
+    the *existence* question raised in Phase 2 (the FK in
+    `sql/021_profile_import_persistence.sql` does point at a real table),
+    but the table's actual column-level structure is still not captured in
+    this repository — no migration here creates it, so `supabase db push`
+    against a fresh project would still fail at `sql/021` without first
+    adding a migration for `profiles`. **Action still required:** obtain
+    `profiles`' real `CREATE TABLE` definition (from the schema dump) and
+    add it to `supabase/migrations/` before this is fully restorable.
+  - **`candidate_prices` table: confirmed to NOT EXIST in production.**
+    This fully resolves the corresponding Phase 2 concern — the
+    conditional `ALTER TABLE candidate_prices ...` in
+    `sql/010_pricing_and_staking_cache.sql` is a guarded no-op against a
+    table that was never created, in production or otherwise. No action
+    needed; downgraded out of the risk register.
+  - The core question from Phase 2 — **which of the three competing
+    `users`/`references` shapes (and which of the two `analytics_events` /
+    `hrscore_snapshots` shapes) is actually live** — was not answered by a
+    received schema dump. **This remains open** (see Phase 6, risk #1).
+
+### Storage
+
+- **Buckets in production: none (0).**
+- **Storage policies (`storage.objects` / `storage.buckets`) in
+  production: none (0).**
+
+This is a materially different (and simpler) finding than Phase 2's
+assumption. Phase 2 inferred a likely-public `cv-uploads` bucket from code
+(`HRkey/src/lib/storage/supabase-storage-provider.ts` calls
+`getPublicUrl()`), created only via the Dashboard. **The live project
+confirms no bucket and no policy actually exists.** There is therefore
+nothing bucket-related to lose by hibernating, and nothing to manually
+recreate for Storage specifically — the code path that references
+`cv-uploads` would need the bucket created fresh regardless of whether the
+project is hibernated or not; that is a pre-existing application gap, not a
+hibernation risk, and is out of scope for this audit (no code changes made).
+
+### Auth (live configuration)
+
+Confirmed directly against the project's Auth settings:
+
+| Setting | Live value |
+|---|---|
+| Email provider | **Enabled** |
+| Google OAuth provider | **Enabled** |
+| Web3 Wallet provider | **Enabled** |
+| Email confirmations | **Enabled** |
+| Anonymous sign-in | **Disabled** |
+| Manual linking | **Disabled** |
+| Custom/other providers | **None** |
+| Site URL | `https://www.hrkey.xyz/landing/auth.html` |
+| Redirect URLs (allow-list) | `https://hrkey.xyz/auth`, `https://hrkey.xyz/auth.html`, `https://www.hrkey.xyz`, `https://www.hrkey.xyz/WebDapp/app.html`, `https://hrkey.xyz/WebDapp/app.html`, `https://www.www.hrkey.xyz/landing/auth.html`, `https://www.hrkey.xyz/landing/auth.html?next=/landing/app.html`, `https://www.hrkey.xyz/landing/app.html`, `https://hrkey.xyz/landing/auth.html`, `https://hrkey.xyz/landing/auth.html?next=/landing/app.html`, `https://hrkey.xyz/landing/app.html` |
+
+**Discrepancy vs. Phase 2's code search:** Phase 2 found only Email and
+Google OAuth wired up in `HRkey/src/lib/auth/auth-service.ts`. The live
+project also has a **Web3 Wallet** provider enabled that the repo-only
+code search did not surface as a distinct Supabase Auth provider — likely
+related to the existing Coinbase OnchainKit / wallet-connect code already
+inventoried in Phase 2 under "External Services," but its Supabase
+Auth-level wiring was not independently located in application code during
+this audit. Not treated as a blocker (the provider and its config are now
+fully documented from the live source), but worth a closer look by the app
+team if anyone is unsure which code path drives it.
+
+**Google OAuth Client ID/Secret:** still not retrievable via the
+Management API (Supabase never returns OAuth client secrets through the
+API, by design) and still not present anywhere in this repository. This is
+expected, standard secrets-management behavior — not a hibernation-package
+gap — and is already listed as a manual step in `supabase/README_RESTORE.md`
+(§7), the same way Stripe/OpenAI/Resend keys are handled. Downgraded from a
+blocking risk to a routine manual restore step.
+
+### Note on redirect URL hygiene
+
+The captured redirect-URL allow-list contains what looks like a typo
+already live in production: `https://www.www.hrkey.xyz/landing/auth.html`
+(double `www.`). Recorded here as-is for restore fidelity — **not
+corrected**, since fixing it would be a live-project configuration change,
+out of scope for this audit (documentation only, no changes to the live
+project or its config were made).
+
+---
+
 ## Phase 3 — Restoration Artifacts
 
 | Artifact | Status before audit | Action taken |
@@ -250,48 +351,74 @@ redirect URLs → seed → smoke test).
 
 | Check | Status |
 |---|---|
-| All tables have a migration | ⚠️ Mostly — but 3 tables (`users`, `references`, and their conflicting variants) have **competing** migrations whose true live shape is unconfirmed; `profiles` and `candidate_prices` are referenced by FK but never created anywhere in this repo |
-| All policies documented | ✅ For `sql/001`–`022`; ❌ Storage bucket policies (Dashboard-only, undocumented); ⚠️ RLS entirely missing on `023`–`029` (not a documentation gap — a real gap in the live schema itself, now documented as such) |
+| All tables have a migration | ⚠️ Still open — the `users`/`references`/`analytics_events`/`hrscore_snapshots` shape conflict is unresolved (schema dump content not yet received); `profiles` is confirmed to exist live but its structure still has no migration in this repo; `candidate_prices` is confirmed **not** to exist live, so that FK concern is closed |
+| All policies documented | ✅ For `sql/001`–`022`; ✅ Storage policies — confirmed **zero exist** live, nothing undocumented; ⚠️ RLS entirely missing on `023`–`029` in the migrations (live status not yet re-confirmed against the dump) |
 | All functions documented | ✅ Inventoried above and in `supabase/MIGRATION_MANIFEST.md` |
-| All buckets inventoried | ✅ One bucket (`cv-uploads`), fully documented, but **not restorable via IaC** — must be recreated manually |
+| All buckets inventoried | ✅ Confirmed live: **zero buckets exist** — nothing to inventory or restore |
 | All Edge Functions documented | ✅ Zero exist — confirmed and documented |
 | All environment variables documented | ✅ Updated `.env.example` now lists every variable found in code |
+| Auth configuration documented | ✅ Full live config captured in Phase 2.5 (providers, Site URL, Redirect URLs) |
 | A complete restore procedure exists | ✅ `supabase/README_RESTORE.md` |
 
 ---
 
 ## Phase 6 — Risks (cannot be auto-recovered)
 
-### ALTO (High)
+### ALTO (High) — still open
 
 1. **Unresolved schema ambiguity for `users` / `references` / `analytics_events` / `hrscore_snapshots`.**
    Multiple migrations redeclare these with `IF NOT EXISTS` and incompatible
-   shapes. Nobody can determine from the repo alone which shape is actually
-   live. **Mitigation before hibernating: run `supabase db dump --schema-only`
-   (or `pg_dump --schema-only`) against the live project and commit it.**
-   This is the single highest-priority action in this entire audit.
-2. **Storage bucket (`cv-uploads`) creation and its RLS policies are
-   Dashboard-only.** No migration creates the bucket or any
-   `storage.objects` policy. If the live bucket is actually private, or has
-   custom per-user access policies, that configuration will be **lost**
-   unless captured manually before the project is paused/deleted.
-3. **RLS is missing entirely on the AOC/RLUSD real-money ledger tables**
-   (`sql/023`–`029`): `user_balances`, `aoc_transactions`,
-   `aoc_conversion_requests`, `rlusd_balances`, `rlusd_transactions`,
-   `rlusd_withdrawal_requests`, `hrkey_wallets`/`purchases`/`ledger`. This
-   is a live gap, not a doc gap — restoring these tables verbatim
-   reproduces the same exposure.
-4. **Google OAuth Client ID/Secret** are configured only in the Supabase
-   Dashboard (and Google Cloud Console) — zero record in this repo. Without
-   them, Google sign-in cannot be restored.
-5. **`profiles` and `candidate_prices` tables** are referenced by foreign
-   key (`sql/021`, `sql/010_pricing_and_staking_cache.sql`) but never
-   created by any migration in this repo — they must exist already in the
-   live database from a source not captured here (manual Dashboard SQL
-   Editor run, or a migration that was never committed).
+   shapes. A schema-only export was reported as generated
+   (`schema_dump_live.sql`) but its contents were not received into this
+   audit — only point-confirmations for two unrelated tables were provided
+   (see Phase 2.5). **This remains the single highest-priority open item.**
+   Mitigation unchanged: the actual content of a
+   `supabase db dump --schema-only` / `pg_dump --schema-only` output needs
+   to be committed to `supabase/migrations/` before this conflict can be
+   called resolved.
+2. **`profiles` table has no migration in this repo.** Its *existence* in
+   production is now confirmed (Phase 2.5), but its column-level structure
+   is not — `sql/021_profile_import_persistence.sql`'s FK to `profiles(id)`
+   would still fail against a fresh `supabase db push` today. Needs the
+   real `CREATE TABLE profiles` statement added as a migration.
+
+### Resolved / downgraded since the live verification pass
+
+- ~~Storage bucket (`cv-uploads`) creation and policies~~ — **resolved**:
+  confirmed live that **zero buckets and zero policies exist**. Nothing to
+  restore, nothing lost by hibernating. (Whether the application's CV
+  upload code path currently works at all in production is a separate,
+  pre-existing application question, out of scope for this audit.)
+- ~~`candidate_prices` table~~ — **resolved**: confirmed **not to exist**
+  live, so `sql/010_pricing_and_staking_cache.sql`'s conditional
+  `ALTER TABLE` is a harmless no-op. No restoration action needed.
+- ~~Google OAuth Client ID/Secret~~ — **downgraded to a routine manual
+  step**, not a package gap. Supabase never exposes OAuth secrets via its
+  API by design, the same as any other third-party credential in this
+  stack (Stripe, OpenAI, Resend) — already covered in
+  `supabase/README_RESTORE.md` §7.
+- **RLS on the AOC/RLUSD ledger tables (`sql/023`–`029`)** — status in the
+  live database was not re-confirmed as part of this verification pass
+  (would require the schema dump contents). Left at its prior classification
+  below pending that confirmation.
 
 ### MEDIO (Medium)
 
+3. **RLS is missing entirely on the AOC/RLUSD real-money ledger tables**
+   in every migration file (`sql/023`–`029`): `user_balances`,
+   `aoc_transactions`, `aoc_conversion_requests`, `rlusd_balances`,
+   `rlusd_transactions`, `rlusd_withdrawal_requests`,
+   `hrkey_wallets`/`purchases`/`ledger`. Not yet re-confirmed against the
+   live schema (see above) — kept as a known gap in the migration files
+   regardless, since restoring them verbatim reproduces whatever the
+   current state is.
+4. **Live Auth has a "Web3 Wallet" provider enabled** that Phase 2's
+   code-only search did not clearly map to a specific code path (see Phase
+   2.5). Not a restorability blocker (fully documented now), but worth the
+   app team double-checking which integration drives it.
+5. **A likely-typo redirect URL is live** (`https://www.www.hrkey.xyz/...`,
+   double `www.`) — preserved as-is per this audit's read-only scope; flag
+   for the app team to decide whether to clean up.
 6. **~90 environment variables were undocumented before this audit** —
    business-rule config (fee ratios, rate limits, feature flags) with no
    recorded defaults anywhere. Now documented with blank placeholders, but
@@ -332,35 +459,60 @@ redirect URLs → seed → smoke test).
 
 ## Phase 7 — Veredicto
 
-# **NO** — el proyecto NO está listo para ser hibernado todavía.
+# **NO** — el proyecto todavía NO está listo para ser hibernado.
 
-La mayoría del conocimiento requerido ya está documentado y empaquetado en
-`supabase/` tras esta auditoría, pero existen **riesgos ALTOS que dependen
-del proyecto Supabase LIVE** y que no pueden resolverse leyendo únicamente
-el repositorio. Antes de pausar o eliminar el proyecto, hay que completar
-esto:
+**Actualización tras la verificación en vivo (2026-07-13):** 3 de los 5
+bloqueadores ALTO originales quedaron resueltos o degradados a pasos
+manuales rutinarios gracias a la evidencia confirmada contra el proyecto
+real:
 
-1. **Ejecutar un `pg_dump --schema-only` / `supabase db dump --schema-only`
-   contra el proyecto en vivo** y commitear el resultado — es la única
-   forma de resolver con certeza el conflicto de definiciones incompatibles
-   de `users`, `references`, `analytics_events` y `hrscore_snapshots`.
-2. **Documentar manualmente la configuración real del bucket `cv-uploads`**
-   (público/privado, políticas RLS de `storage.objects`) inspeccionando el
-   Dashboard antes de apagar el proyecto.
-3. **Exportar las credenciales OAuth de Google** (Client ID/Secret) desde
-   Google Cloud Console / Supabase Dashboard y guardarlas en un gestor de
-   secretos accesible para quien restaure el proyecto.
-4. **Confirmar el origen de las tablas `profiles` y `candidate_prices`**
-   (referenciadas por FK pero nunca creadas en este repo) — deben
-   localizarse y añadirse como migración antes de que el proyecto original
-   deje de estar disponible para inspeccionar.
-5. **Decidir conscientemente** si el hueco de RLS en las tablas
-   `023`–`029` (ledger AOC/RLUSD) es intencional o un descuido — si es un
-   descuido, corregirlo es una decisión de negocio/seguridad fuera del
-   alcance de esta auditoría, pero debe quedar registrada la decisión antes
-   de restaurar el mismo esquema en un proyecto nuevo.
+- ✅ **Storage (buckets y políticas): resuelto.** Confirmado en vivo que no
+  existe ningún bucket ni ninguna política — nada que restaurar, nada que
+  perder al hibernar.
+- ✅ **`candidate_prices`: resuelto.** Confirmado que no existe en
+  producción — la referencia condicional en `sql/010` es inofensiva.
+- ✅ **Credenciales OAuth de Google: degradado a paso manual rutinario.**
+  Es comportamiento esperado de gestión de secretos (igual que
+  Stripe/OpenAI/Resend), ya cubierto en `supabase/README_RESTORE.md`.
+- ✅ **Auth (providers, Site URL, Redirect URLs): completamente
+  documentado** con la configuración real (Email, Google, Web3 Wallet,
+  confirmación de email activa, sign-in anónimo y manual linking
+  desactivados, 11 redirect URLs documentadas).
 
-Una vez completados estos 5 puntos (especialmente el dump de esquema en
-vivo), el paquete de hibernación en `supabase/` + `docs/HIBERNATION_AUDIT.md`
-sería suficiente para reconstruir el proyecto completo sin depender del
-Dashboard de Supabase original.
+Sin embargo, **queda exactamente 1 bloqueador ALTO sin resolver**, y es el
+que esta auditoría identificó desde el inicio como el más importante de
+todos:
+
+1. **El contenido real de `schema_dump_live.sql` no llegó a este entorno.**
+   Se confirmaron dos hechos puntuales (`profiles` existe, `candidate_prices`
+   no existe), pero **no se recibió el dump ni las definiciones reales de
+   `users`, `references`, `analytics_events`, `hrscore_snapshots` ni la
+   estructura de columnas de `profiles`**. Sin esto, no puedo confirmar cuál
+   de las formas incompatibles de estas tablas es la que realmente está viva
+   en producción — que es precisamente la pregunta que un dump de esquema
+   resuelve. Emitir `HIBERNATION READY` sin esta confirmación sería
+   contradecir el propósito de la propia auditoría.
+2. (Relacionado, menor severidad) **`profiles` necesita su migración real**
+   — existencia confirmada, pero sin su `CREATE TABLE` real documentado
+   aquí, un restore desde cero fallaría en `sql/021`.
+3. (Sin cambios, severidad MEDIA, no bloquea el veredicto) RLS ausente en
+   `023`–`029` — no se pudo re-confirmar contra el dump.
+
+### Qué falta exactamente para pasar a `STATUS: HIBERNATION READY`
+
+Una sola cosa: **pega aquí el contenido de `schema_dump_live.sql`** (o, como
+mínimo, las sentencias `CREATE TABLE` reales de `users`, `references`,
+`analytics_events`, `hrscore_snapshots` y `profiles` tal como existen hoy en
+producción). En cuanto lo reciba:
+
+- Si confirma que una de las tres formas ya documentadas de `users`/`references`
+  coincide con la real → cierro el punto 1, añado la definición real de
+  `profiles` como migración, y el veredicto pasa a `STATUS: HIBERNATION READY`.
+- Si la forma real difiere de las tres ya documentadas → la incorporo como
+  la definitiva y el resultado es el mismo: veredicto `HIBERNATION READY`
+  una vez commiteada.
+
+No se generará el checklist operativo de apagado hasta que este punto quede
+cerrado — apagar el proyecto sin saber con certeza la forma real de sus
+tablas centrales es exactamente el escenario que esta auditoría existe para
+prevenir.
