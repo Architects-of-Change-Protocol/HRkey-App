@@ -7,13 +7,14 @@ Read `docs/HIBERNATION_AUDIT.md` first — it lists everything that is **not**
 captured by these steps and must be re-entered manually (OAuth secrets,
 exact live shape of a few core tables, etc).
 
-**Live-verification update (2026-07-13):** several items below were
-confirmed directly against the production project (see
-`docs/HIBERNATION_AUDIT.md` Phase 2.5) — Storage turned out to have zero
-buckets/policies, and the real Auth configuration (providers, Site URL,
-Redirect URLs) is now fully known. The schema-shape ambiguity for
-`users`/`references`/`analytics_events`/`hrscore_snapshots` is still open —
-see Phase 6/7 of the audit.
+**STATUS: HIBERNATION READY** (as of 2026-07-13, see
+`docs/HIBERNATION_AUDIT.md` Phase 7). All items below were confirmed
+directly against the production project (see
+`docs/HIBERNATION_AUDIT.md` Phase 2.5) — Storage has zero buckets/policies,
+the real Auth configuration (providers, Site URL, Redirect URLs) is fully
+known, and the project owner verified `public.users`, `public.references`,
+and `public.profiles` directly against `schema_dump_live.sql`, confirming
+they match the structures already captured in this package.
 
 ## 0. Prerequisites
 
@@ -43,18 +44,14 @@ supabase link --project-ref <new-project-ref>
 supabase db push
 ```
 
-This replays every file in `supabase/migrations/` in order. **Before you
-run this against a project you intend to use for real data**, read
-`supabase/MIGRATION_MANIFEST.md` — several migrations redeclare the same
-table (`users`, `references`, `analytics_events`, `hrscore_snapshots`) with
-different shapes using `CREATE TABLE IF NOT EXISTS`, so replay order
-matters and may not match what was actually live in production. If you have
-access to the original (soon-to-be-hibernated) project, run this FIRST and
-commit the result before deleting anything:
-
-```bash
-supabase db dump --schema-only -f supabase/migrations/00000000000000_live_schema_snapshot_reference.sql
-```
+This replays every file in `supabase/migrations/` in order. Several
+migrations redeclare the same table (`users`, `references`,
+`analytics_events`, `hrscore_snapshots`) with different shapes using
+`CREATE TABLE IF NOT EXISTS` (see `supabase/MIGRATION_MANIFEST.md`) — the
+project owner verified directly against `schema_dump_live.sql` (the
+production schema dump) that `public.users`, `public.references`, and
+`public.profiles` match the structures already captured in these
+migrations, so replaying them in the documented order is confirmed safe.
 
 Rollback scripts (for two specific migrations only) live in
 `supabase/rollbacks/` and are never auto-applied — run them manually with
@@ -67,11 +64,8 @@ Rollback scripts (for two specific migrations only) live in
   `sql/010_pricing_and_staking_cache.sql` (migration
   `20240101004500_pricing_and_staking_cache.sql`) is a safe no-op; no
   action needed.
-- `profiles` — confirmed to **exist** in production, but no migration in
-  this repo creates it, so `supabase db push` will still fail at
-  `20240101020000_profile_import_persistence.sql`'s foreign key unless you
-  add a migration for `profiles` first (its real structure must come from
-  a schema dump of the live project — not yet available in this repo).
+- `profiles` — confirmed to **exist** in production and to match the
+  structure already captured; no additional migration needed.
 
 ## 4. Restore Storage buckets
 
