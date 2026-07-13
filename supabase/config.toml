@@ -1,0 +1,94 @@
+# ============================================================================
+# Supabase CLI project configuration — HIBERNATION PACKAGE
+# ============================================================================
+# This file was generated as part of the Supabase Hibernation Audit
+# (see docs/HIBERNATION_AUDIT.md). It did NOT exist before this audit — the
+# project previously had no local Supabase CLI project at all, meaning the
+# entire schema/config lived only in the live Supabase Dashboard + scattered
+# SQL files (sql/, backend/supabase/, backend/migrations/, database/migrations/).
+#
+# This file captures known, code-derived configuration only. Values that can
+# only be confirmed by looking at the live Supabase Dashboard are marked
+# "MUST VERIFY AGAINST LIVE PROJECT" — see docs/HIBERNATION_AUDIT.md Phase 6
+# (Risks) for the full list before you hibernate/delete the live project.
+# ============================================================================
+
+project_id = "hrkey-app"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+# ----------------------------------------------------------------------------
+# Auth
+# ----------------------------------------------------------------------------
+# Derived from code (HRkey/src/lib/auth/auth-service.ts): the app uses
+# Supabase email/password auth AND Google OAuth. Redirect path used by the
+# app is "/v2/auth" appended to whatever Site URL is configured.
+#
+# MUST VERIFY AGAINST LIVE PROJECT before hibernating:
+#   - Auth > URL Configuration > Site URL and every allow-listed Redirect URL
+#   - Auth > Providers > Google > Client ID / Client Secret (NOT stored in
+#     this repo anywhere — these live only in Google Cloud Console + the
+#     Supabase Dashboard)
+#   - Auth > Email templates (if customized from defaults)
+#   - JWT expiry / refresh token settings if changed from defaults
+[auth]
+enabled = true
+site_url = "env(FRONTEND_URL)"
+additional_redirect_urls = ["env(FRONTEND_URL)/v2/auth"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_OAUTH_CLIENT_ID)"
+secret = "env(GOOGLE_OAUTH_CLIENT_SECRET)"
+redirect_uri = "env(FRONTEND_URL)/v2/auth"
+
+# ----------------------------------------------------------------------------
+# Storage
+# ----------------------------------------------------------------------------
+# Only one bucket is referenced anywhere in the codebase:
+#   "cv-uploads" (HRkey/src/lib/storage/supabase-storage-provider.ts)
+# It is created and its policies are set ONLY in the live Dashboard today —
+# no migration in this repo creates it. This [storage.buckets] block is a
+# best-effort declaration so `supabase db push` / bucket provisioning has a
+# starting point. MUST VERIFY the real bucket's public/private setting and
+# any Storage RLS policies against the live project before hibernating —
+# see docs/HIBERNATION_AUDIT.md Phase 6, risk "Storage bucket policies".
+[storage]
+enabled = true
+
+[storage.buckets.cv-uploads]
+public = true  # ASSUMED from getPublicUrl() usage in code — VERIFY against live project
+
+# ----------------------------------------------------------------------------
+# Edge Functions
+# ----------------------------------------------------------------------------
+# Confirmed via repo-wide search: this project has ZERO Supabase Edge
+# Functions. Nothing to declare here.
+
+# ----------------------------------------------------------------------------
+# Realtime
+# ----------------------------------------------------------------------------
+# Confirmed via repo-wide search: Realtime (channels / postgres_changes) is
+# not used anywhere in the codebase. Left at default (disabled features are
+# harmless either way).
+[realtime]
+enabled = true

@@ -1,0 +1,19 @@
+-- ============================================================================
+-- supabase/seed.sql — HIBERNATION PACKAGE
+-- ============================================================================
+-- Supabase CLI runs this file automatically on `supabase db reset`.
+--
+-- Intentionally left empty of data. The only seed data found in this repo
+-- (sql/seed_hrkey_referrals.sql and sql/030_trust_data_model_v1_seed.sql) is
+-- clearly staging/dev-only fixture data (test users, fake referrals, sample
+-- trust events) — NOT something that should ever be loaded into a restored
+-- production project by default.
+--
+-- Those files were preserved verbatim (unmodified) under supabase/dev-seeds/
+-- for local development use only. To use them locally:
+--
+--   psql "$SUPABASE_DB_URL" -f supabase/dev-seeds/seed_hrkey_referrals.sql
+--   psql "$SUPABASE_DB_URL" -f supabase/dev-seeds/030_trust_data_model_v1_seed.sql
+--
+-- Do NOT run either file against a production/restored project.
+-- ============================================================================
